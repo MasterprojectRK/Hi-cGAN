@@ -129,4 +129,8 @@ dmypy.json
 .pyre/
 
 # vscodium
-.vscode/settings.json
+.vscode/
+
+# logfiles
+logs/
+
