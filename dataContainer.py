@@ -279,7 +279,7 @@ class DataContainer():
         startInd = idx + flankingsize
         stopInd = startInd + windowsize
         trainmatrix = self.sparseHiCMatrix[startInd:stopInd,startInd:stopInd].todense()
-        trainmatrix = np.array(np.nan_to_num(trainmatrix))[0,:]
+        trainmatrix = np.array(np.nan_to_num(trainmatrix))
         trainmatrix = np.expand_dims(trainmatrix, axis=-1) #make Hi-C (sub-)matrix an RGB image
         return trainmatrix
     

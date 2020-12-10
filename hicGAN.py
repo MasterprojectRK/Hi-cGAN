@@ -4,6 +4,7 @@ import datetime
 import time
 import os
 import matplotlib.pyplot as plt 
+from tqdm import tqdm
 
 #implementation of adapted pix2pix cGAN
 #compare tensorflow tutorial https://www.tensorflow.org/tutorials/generative/pix
@@ -15,7 +16,7 @@ class HiCGAN():
 
         self.OUTPUT_CHANNELS = 1
         self.INPUT_CHANNELS = 3
-        self.INPUT_SIZE = 80
+        self.INPUT_SIZE = 64
         self.TARGET_CHANNELS = 1
         self.LAMBDA = 100
         self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
@@ -64,11 +65,11 @@ class HiCGAN():
 
 
     def Generator(self):
-        inputs = tf.keras.layers.Input(shape=[self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS])
+        inputs = tf.keras.layers.Input(shape=[self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS], name="factorData")
 
         down_stack = [
-            HiCGAN.downsample(64, 4, apply_batchnorm=False), # (bs, 128, 128, 64)
-            HiCGAN.downsample(128, 4), # (bs, 64, 64, 128)
+            #HiCGAN.downsample(64, 4, apply_batchnorm=False), # (bs, 128, 128, 64)
+            #HiCGAN.downsample(128, 4), # (bs, 64, 64, 128)
             HiCGAN.downsample(256, 4), # (bs, 32, 32, 256)
             HiCGAN.downsample(512, 4), # (bs, 16, 16, 512)
             HiCGAN.downsample(512, 4), # (bs, 8, 8, 512)
@@ -83,8 +84,8 @@ class HiCGAN():
             HiCGAN.upsample(512, 4, apply_dropout=True), # (bs, 8, 8, 1024)
             HiCGAN.upsample(512, 4), # (bs, 16, 16, 1024)
             HiCGAN.upsample(256, 4), # (bs, 32, 32, 512)
-            HiCGAN.upsample(128, 4), # (bs, 64, 64, 256)
-            HiCGAN.upsample(64, 4), # (bs, 128, 128, 128)
+            #HiCGAN.upsample(128, 4), # (bs, 64, 64, 256)
+            #HiCGAN.upsample(64, 4), # (bs, 128, 128, 128)
         ]
 
         initializer = tf.random_normal_initializer(0., 0.02)
@@ -180,7 +181,7 @@ class HiCGAN():
         prediction = model(test_input, training=True)
         plt.figure(figsize=(15,15))
 
-        display_list = [test_input[0], tar[0], prediction[0]]
+        display_list = [test_input["factorData"][0], tar["out_matrixData"][0], prediction[0]]
         title = ['Input Image', 'Ground Truth', 'Predicted Image']
 
         for i in range(3):
@@ -191,9 +192,6 @@ class HiCGAN():
             plt.axis('off')
         plt.show()
 
-
-
-
     def fit(self, train_ds, epochs, test_ds):
         for epoch in range(epochs):
             start = time.time()
@@ -202,11 +200,11 @@ class HiCGAN():
             print("Epoch: ", epoch)
 
             # Train
-            for n, (input_image, target) in train_ds.enumerate():
+            for n, (input_image, target) in tqdm(train_ds.enumerate()):
                 print('.', end='')
                 if (n+1) % 100 == 0:
                     print()
-                self.train_step(input_image, target, epoch)
+                self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
             print()
 
             # saving (checkpoint) the model every 20 epochs
@@ -217,3 +215,8 @@ class HiCGAN():
                                                                 time.time()-start))
         self.checkpoint.save(file_prefix = self.checkpoint_prefix)
 
+    def plotModels(self, outputpath: str, figuretype: str):
+        generatorPlotName = os.path.join(outputpath, "generatorModel" + figuretype)
+        discriminatorPlotName = os.path.join(outputpath, "discriminatorModel" + figuretype)
+        tf.keras.utils.plot_model(self.generator, show_shapes=True, to_file=generatorPlotName)
+        tf.keras.utils.plot_model(self.discriminator, show_shapes=True, to_file=discriminatorPlotName)
