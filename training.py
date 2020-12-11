@@ -1,6 +1,7 @@
 import csv
 import os
 import click
+import numpy as np
 import tensorflow as tf
 import hicGAN
 import dataContainer
@@ -27,7 +28,7 @@ import records
               help="Path where chromatin factors for validation reside (bigwig files). Use this option multiple times to specify more than one path. First path belongs to first validation matrix etc.")
 @click.option("--windowsize", "-ws", required=True,
               type=click.IntRange(min=64), 
-              default=64, show_default=True,
+              default=100, show_default=True,
               help="Windowsize for submatrices. Must be integer >80 and (much) smaller than smallest chrom")
 @click.option("--outfolder", "-o", required=True,
               type=click.Path(exists=True, writable=True, file_okay=False), 
@@ -142,7 +143,7 @@ def training(trainmatrices,
     paramDict["nr_factors"] = nr_factors
     for i in range(nr_factors):
         paramDict["chromFactor_" + str(i)] = container0.factorNames[i]
-    #nr_trainingSamples = sum(nr_samples_list[0:len(traindataContainerList)])
+    nr_trainingSamples = sum(nr_samples_list[0:len(traindataContainerList)])
     storedFeaturesDict = container0.storedFeatures
 
     #save the training parameters to a file before starting to train
@@ -173,9 +174,9 @@ def training(trainmatrices,
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     validationDs = validationDs.take(5)
     
-    hicGanModel = hicGAN.HiCGAN()
+    hicGanModel = hicGAN.HiCGAN(log_dir = outfolder)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
-    hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs)
+    hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs, steps_per_epoch=int(np.floor(nr_trainingSamples/batchsize)) )
 
 if __name__ == "__main__":
     training() #pylint: disable=no-value-for-parameter

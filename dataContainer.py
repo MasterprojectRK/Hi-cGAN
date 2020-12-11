@@ -7,6 +7,7 @@ from tensorflow import dtypes as tfdtypes
 from scipy.sparse import save_npz, csr_matrix
 from tqdm import tqdm
 import pandas as pd
+import matplotlib.pyplot as plt
 
 class DataContainer():
     def __init__(self, chromosome, matrixfilepath, chromatinFolder, binsize=None):
@@ -32,6 +33,7 @@ class DataContainer():
         self.flankingsize = None
         self.maxdist = None
         self.data_loaded = False
+        self.imagesize = 128
 
     def __loadFactorData(self, ignoreChromLengths=False, scaleFeatures=False, clampFeatures=False):
         #load chromatin factor data from bigwig files
@@ -280,8 +282,12 @@ class DataContainer():
         stopInd = startInd + windowsize
         trainmatrix = self.sparseHiCMatrix[startInd:stopInd,startInd:stopInd].todense()
         trainmatrix = np.array(np.nan_to_num(trainmatrix))
-        trainmatrix = np.expand_dims(trainmatrix, axis=-1) #make Hi-C (sub-)matrix an RGB image
-        return trainmatrix
+        #trainmatrix = np.expand_dims(trainmatrix, axis=-1) #make Hi-C (sub-)matrix an RGB image
+        embedMatrix = self.__getFactorData(idx)
+        embedMatrix[self.nr_factors:self.nr_factors+self.windowsize, self.nr_factors:self.nr_factors+windowsize, 0] = utils.scaleArray(trainmatrix)
+        #plt.matshow(embedMatrix)
+        #plt.show()
+        return embedMatrix
     
     def __getFactorData(self, idx):
         if self.chromatinFolder is None:
@@ -306,9 +312,16 @@ class DataContainer():
         #the chromatin factors right of the target submatrix
         right_flanking_array = self.FactorDataArray[right_flank_start:right_flank_start+flankingsize]
         factorArray = np.stack((under_window_array, left_flanking_array, right_flanking_array), axis=-1)
-        #embed the factors in a (windowsize,windowsize,3) array, i.e. a quadratic rgb image
-        embedArray = np.zeros((factorArray.shape[0], factorArray.shape[0], factorArray.shape[2]), dtype=factorArray.dtype)
-        embedArray[:,:factorArray.shape[1],:] = factorArray
+        #embed the factors in an (imagesize,imagesize,3) array, i.e. a quadratic rgb image
+        embedArray = np.zeros((self.imagesize, self.imagesize, factorArray.shape[2]), dtype=factorArray.dtype)
+        #left side
+        embedArray[self.nr_factors:self.nr_factors+windowsize, :self.nr_factors, :] = factorArray
+        #right side
+        embedArray[self.nr_factors:self.nr_factors+windowsize, -self.nr_factors:, :] = np.flip(factorArray, axis=1)
+        #upper- and lower side
+        embedArray += np.rot90(embedArray)
+        #plt.matshow(embedArray)
+        #plt.show()
         return embedArray
 
     def getSampleData(self, idx):
