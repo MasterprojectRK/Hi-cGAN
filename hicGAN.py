@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 
 class HiCGAN():
-    def __init__(self): 
+    def __init__(self, log_dir: str): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
@@ -26,11 +26,11 @@ class HiCGAN():
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
-        self.log_dir="logs/"
+        self.log_dir=log_dir
         self.summary_writer = tf.summary.create_file_writer(
-            self.log_dir + "fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+            os.path.join(self.log_dir, "fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")))
 
-        self.checkpoint_dir = './training_checkpoints'
+        self.checkpoint_dir = os.path.join(self.log_dir, 'training_checkpoints')
         self.checkpoint_prefix = os.path.join(self.checkpoint_dir, "ckpt")
         self.checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
                                     discriminator_optimizer=self.discriminator_optimizer,
@@ -177,46 +177,40 @@ class HiCGAN():
             tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=epoch)
             tf.summary.scalar('disc_loss', disc_loss, step=epoch)
 
-    def generate_images(self, model, test_input, tar):
+    def generate_images(self, model, test_input, tar, epoch: int):
         prediction = model(test_input, training=True)
-        plt.figure(figsize=(15,15))
-
+        figname = "testpred_epoch_{:05d}.png".format(epoch+1)
+        figname = os.path.join(self.log_dir, figname)
         display_list = [test_input["factorData"][0], tar["out_matrixData"][0], prediction[0]]
-        title = ['Input Image', 'Ground Truth', 'Predicted Image']
+        titleList = ['Input Image', 'Ground Truth', 'Predicted Image']
 
-        for i in range(3):
-            plt.subplot(1, 3, i+1)
-            plt.title(title[i])
-            # getting the pixel values between [0, 1] to plot it.
-            plt.imshow(display_list[i] * 0.5 + 0.5)
-            plt.axis('off')
-        plt.show()
+        fig1, axs1 = plt.subplots(1,len(display_list), figsize=(15,15))
+        for i in range(len(display_list)):
+            axs1[i].imshow(display_list[i] * 0.5 + 0.5)
+            axs1[i].set_title(titleList[i])
+        fig1.savefig(figname)
 
-    def fit(self, train_ds, epochs, test_ds):
+    def fit(self, train_ds, epochs, test_ds, steps_per_epoch: int):
         for epoch in range(epochs):
-            start = time.time()
             for example_input, example_target in test_ds.take(1):
-                self.generate_images(self.generator, example_input, example_target)
-            print("Epoch: ", epoch)
+                self.generate_images(self.generator, example_input, example_target, epoch)
 
             # Train
-            for n, (input_image, target) in tqdm(train_ds.enumerate()):
-                print('.', end='')
-                if (n+1) % 100 == 0:
-                    print()
+            train_pbar = tqdm(train_ds.enumerate(), total=steps_per_epoch)
+            train_pbar.set_description("Epoch {:05d}".format(epoch+1))
+            for _, (input_image, target) in train_pbar:
                 self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
-            print()
 
             # saving (checkpoint) the model every 20 epochs
             if (epoch + 1) % 20 == 0:
                 self.checkpoint.save(file_prefix = self.checkpoint_prefix)
 
-            print ('Time taken for epoch {} is {} sec\n'.format(epoch + 1,
-                                                                time.time()-start))
         self.checkpoint.save(file_prefix = self.checkpoint_prefix)
 
     def plotModels(self, outputpath: str, figuretype: str):
-        generatorPlotName = os.path.join(outputpath, "generatorModel" + figuretype)
-        discriminatorPlotName = os.path.join(outputpath, "discriminatorModel" + figuretype)
+        generatorPlotName = "generatorModel.{:s}".format(figuretype)
+        generatorPlotName = os.path.join(outputpath, generatorPlotName)
+        discriminatorPlotName = "discriminatorModel.{:s}".format(figuretype)
+        discriminatorPlotName = os.path.join(outputpath, discriminatorPlotName)
         tf.keras.utils.plot_model(self.generator, show_shapes=True, to_file=generatorPlotName)
         tf.keras.utils.plot_model(self.discriminator, show_shapes=True, to_file=discriminatorPlotName)

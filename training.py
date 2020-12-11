@@ -1,6 +1,7 @@
 import csv
 import os
 import click
+import numpy as np
 import tensorflow as tf
 import hicGAN
 import dataContainer
@@ -142,7 +143,7 @@ def training(trainmatrices,
     paramDict["nr_factors"] = nr_factors
     for i in range(nr_factors):
         paramDict["chromFactor_" + str(i)] = container0.factorNames[i]
-    #nr_trainingSamples = sum(nr_samples_list[0:len(traindataContainerList)])
+    nr_trainingSamples = sum(nr_samples_list[0:len(traindataContainerList)])
     storedFeaturesDict = container0.storedFeatures
 
     #save the training parameters to a file before starting to train
@@ -171,11 +172,10 @@ def training(trainmatrices,
     validationDs = validationDs.map(lambda x: records.parse_function(x, storedFeaturesDict) , num_parallel_calls=tf.data.experimental.AUTOTUNE)
     validationDs = validationDs.batch(batchsize)
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
-    validationDs = validationDs.take(5)
     
-    hicGanModel = hicGAN.HiCGAN()
+    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
-    hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs)
+    hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
 
 if __name__ == "__main__":
     training() #pylint: disable=no-value-for-parameter
