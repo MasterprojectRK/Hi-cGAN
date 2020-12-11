@@ -164,7 +164,6 @@ def training(trainmatrices,
     trainDs = trainDs.shuffle(buffer_size=shuffleBufferSize, reshuffle_each_iteration=True)
     trainDs = trainDs.batch(batchsize, drop_remainder=False)
     trainDs = trainDs.prefetch(tf.data.experimental.AUTOTUNE)
-    trainDs = trainDs.take(5)
     #build the input streams for validation
     validationDs = tf.data.TFRecordDataset(valdataRecords, 
                                             num_parallel_reads=tf.data.experimental.AUTOTUNE,
