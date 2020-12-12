@@ -33,6 +33,9 @@ import records
 @click.option("--outfolder", "-o", required=True,
               type=click.Path(exists=True, writable=True, file_okay=False), 
               help="Folder where trained model and diverse outputs will be stored")
+@click.option("--epochs", "-ep", required=True,
+              type=click.IntRange(min=1), 
+              default=2, show_default=True)
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -41,7 +44,8 @@ def training(trainmatrices,
              valchroms, 
              valchrompaths,
              windowsize,
-             outfolder):
+             outfolder,
+             epochs):
     
     paramDict = locals().copy()
 
@@ -49,7 +53,7 @@ def training(trainmatrices,
     recordsize = 2000
     debugstate = None
     figuretype = "png"
-    EPOCHS = 10
+    EPOCHS = epochs
     batchsize = 32
 
     #remove spaces, commas and "chr" from the train and val chromosome lists
