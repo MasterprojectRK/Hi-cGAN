@@ -147,7 +147,7 @@ def plotMatrix(pMatrix, pFilename, pTitle):
     fig1.colorbar(cs)
     fig1.savefig(pFilename)
 
-def plotLoss(pLossValueLists, pNameList, pFilename):
+def plotLoss(pLossValueLists, pNameList, pFilename, useLogscale=False):
     #plot loss and validation loss over epoch numbers
     fig1, ax1 = plt.subplots(figsize=(6,4.5))
     nr_epochs = len(pLossValueLists[0])
@@ -157,7 +157,8 @@ def plotLoss(pLossValueLists, pNameList, pFilename):
     ax1.set_title('model loss')
     ax1.set_ylabel('loss')
     ax1.set_xlabel('epoch')
-    ax1.set_yscale('log')
+    if useLogscale:
+        ax1.set_yscale('log')
     locVal = 0
     if nr_epochs <= 25:
         locVal = 1
