@@ -295,21 +295,11 @@ class DataContainer():
         if flankingsize is None:
             flankingsize = windowsize
             self.flankingsize = windowsize
-        #start indices for the three channels (left flank, under submatrix, right flank)
-        left_flank_start = idx
-        window_start = left_flank_start + flankingsize
-        right_flank_start = window_start + windowsize
-        #the chromatin factors directly under the target submatrix
-        under_window_array = self.FactorDataArray[window_start:window_start+windowsize]
-        #the chromatin factors left of the target submatrix
-        left_flanking_array = self.FactorDataArray[left_flank_start:left_flank_start+flankingsize]
-        #the chromatin factors right of the target submatrix
-        right_flanking_array = self.FactorDataArray[right_flank_start:right_flank_start+flankingsize]
-        factorArray = np.stack((under_window_array, left_flanking_array, right_flanking_array), axis=-1)
-        #embed the factors in a (windowsize,windowsize,3) array, i.e. a quadratic rgb image
-        embedArray = np.zeros((factorArray.shape[0], factorArray.shape[0], factorArray.shape[2]), dtype=factorArray.dtype)
-        embedArray[:,:factorArray.shape[1],:] = factorArray
-        return embedArray
+        startIdx = idx
+        endIdx = startIdx + 2*flankingsize + windowsize
+        factorArray = self.FactorDataArray[startIdx:endIdx]
+        factorArray = np.expand_dims(factorArray, axis=-1)
+        return factorArray
 
     def getSampleData(self, idx):
         if not self.data_loaded:
