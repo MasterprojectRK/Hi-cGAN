@@ -300,7 +300,26 @@ class HiCGAN():
         tf.keras.utils.plot_model(self.generator, show_shapes=True, to_file=generatorPlotName)
         tf.keras.utils.plot_model(self.discriminator, show_shapes=True, to_file=discriminatorPlotName)
 
+    def predict(self, test_ds, steps_per_record):
+        predictedArray = []
+        for batch in tqdm(test_ds, desc="Predicting", total=steps_per_record):
+            predBatch = self.predictionStep(input_batch=batch).numpy()
+            for i in range(predBatch.shape[0]):
+                predictedArray.append(predBatch[i][:,:,0])        
+        predictedArray = np.array(predictedArray)
+        return predictedArray
     
+    @tf.function
+    def predictionStep(self, input_batch, training=True):
+        return self.generator(input_batch, training=training)
+
+    
+    def loadGenerator(self, trainedModelPath: str):
+        trainedModel = tf.keras.models.load_model(filepath=trainedModelPath, 
+                                                  custom_objects={"CustomReshapeLayer": CustomReshapeLayer(self.INPUT_SIZE),
+                                                                  "SymmetricFromTriuLayer": SymmetricFromTriuLayer()})
+        self.generator = trainedModel
+
 class CustomReshapeLayer(tf.keras.layers.Layer):
     '''
     reshape a 1D tensor such that it represents 
