@@ -306,8 +306,10 @@ class DataContainer():
             return None
         factorArray = self.__getFactorData(idx)
         matrixArray = self.__getMatrixData(idx)
+        if matrixArray is not None:
+            matrixArray = matrixArray.astype("float32")
         return {"factorData": factorArray.astype("float32"), 
-                "out_matrixData": matrixArray.astype("float32")}
+                "out_matrixData": matrixArray}
         
     def plotFeatureAtIndex(self, idx, outpath, figuretype="png"):
         if not self.data_loaded:
