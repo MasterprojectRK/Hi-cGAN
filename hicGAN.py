@@ -11,17 +11,19 @@ import utils
 
 
 class HiCGAN():
-    def __init__(self, log_dir: str): 
+    def __init__(self, log_dir: str, lambda_pixel: float, loss_type_pixel: str): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
         self.INPUT_CHANNELS = 1
         self.INPUT_SIZE = 64
         self.NR_FACTORS = 14
-        self.LAMBDA = 10000
+        self.LAMBDA = lambda_pixel
+        self.tv_loss_Weight = 2e-8 
+        self.loss_type_pixel = loss_type_pixel
         self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        self.generator_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
-        self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+        self.generator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
+        self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
 
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
@@ -46,16 +48,17 @@ class HiCGAN():
             convParamDict["name"] = "conv1D_" + str(i + 1)
             convParamDict["filters"] = nr_filters
             convParamDict["kernel_size"] = kernelWidth
-            convParamDict["activation"] = "sigmoid"
             convParamDict["data_format"]="channels_last"
             if kernelWidth > 1:
                 convParamDict["padding"] = "same"
             x = Conv1D(**convParamDict)(x)
-        #flatten the output of the convolutions
+            x = BatchNormalization()(x)
+            x = tf.keras.layers.Activation("sigmoid")(x)
+        #make the shape of a 2D-image
         x = Conv1D(filters=64, strides=3, kernel_size=4, data_format="channels_last", activation="sigmoid", padding="same", name="conv1D_final")(x)
         y = tf.keras.layers.Permute((2,1))(x)
         x = tf.keras.layers.Add()([x, y])
-        x = tf.keras.layers.Reshape((64,64,1))(x)
+        x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
         model = tf.keras.Model(inputs=inputs, outputs=x)
         #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #model.summary()
@@ -137,16 +140,24 @@ class HiCGAN():
             x = tf.keras.layers.Concatenate()([x, skip])
 
         x = last(x)
+        x_T = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE))(x)
+        x_T = tf.keras.layers.Permute((2,1))(x_T)
+        x_T = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x_T)
+        x = tf.keras.layers.add([x, x_T])
 
         return tf.keras.Model(inputs=inputs, outputs=x)
 
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         gan_loss = self.loss_object(tf.ones_like(disc_generated_output), disc_generated_output)
-        # mean squared error
-        l2_loss = tf.reduce_mean(tf.square(target - gen_output))
-        total_gen_loss = gan_loss + (self.LAMBDA * l2_loss)
-        return total_gen_loss, gan_loss, l2_loss
+        # mean squared error or mean absolute error
+        if self.loss_type_pixel == "L1":
+            pixel_loss = tf.reduce_mean(tf.abs(target - gen_output))
+        else: 
+            pixel_loss = tf.reduce_mean(tf.square(target - gen_output))
+        tv_loss = tf.reduce_mean(tf.image.total_variation(gen_output))
+        total_gen_loss = pixel_loss + 1/self.LAMBDA * gan_loss + self.tv_loss_Weight * tv_loss
+        return total_gen_loss, gan_loss, pixel_loss
 
 
     def Discriminator(self):
@@ -259,7 +270,7 @@ class HiCGAN():
                 disc_loss_batches.append(disc_loss)
             gen_loss_val.append(np.mean(gen_loss_batches))
             disc_loss_val.append(np.mean(disc_loss_batches))
-            del gen_loss_batches, disc_loss_batches
+            del gen_loss_batches, disc_loss_batches, train_pbar
             
             # saving (checkpoint) the model every 20 epochs
             if (epoch + 1) % 20 == 0:

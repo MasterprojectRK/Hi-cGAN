@@ -36,6 +36,14 @@ import records
 @click.option("--epochs", "-ep", required=True,
               type=click.IntRange(min=1), 
               default=2, show_default=True)
+@click.option("--lossWeightPixel", "-lwp", required=False,
+              type=click.FloatRange(min=1e-10), 
+              default=1000., show_default=True, 
+              help="loss weight for L1/L2 error of generator")
+@click.option("--lossTypePixel", "-etp", required=False,
+             type=click.Choice(["L1", "L2"]), 
+             default="L2", show_default=True,
+             help="Type of loss to use per-pixel")
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -45,7 +53,9 @@ def training(trainmatrices,
              valchrompaths,
              windowsize,
              outfolder,
-             epochs):
+             epochs,
+             lossweightpixel,
+             losstypepixel):
     
     paramDict = locals().copy()
 
@@ -176,7 +186,7 @@ def training(trainmatrices,
     validationDs = validationDs.batch(batchsize)
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     
-    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder)
+    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, lambda_pixel=lossweightpixel, loss_type_pixel=losstypepixel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
     hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
 
