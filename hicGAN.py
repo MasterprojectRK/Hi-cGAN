@@ -37,10 +37,10 @@ class HiCGAN():
 
         self.progress_plot_name = os.path.join(self.log_dir, "lossOverEpochs.png")
 
-    def oneD_twoD_conversion(self, nr_filters_list=[1], kernel_width_list=[1], nr_neurons_List=[460,881,1690]):
-        model = tf.keras.Sequential()    
-        model.add(tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS)))
+    def oneD_twoD_conversion(self, nr_filters_list=[16,16,32,32,64], kernel_width_list=[4,4,4,4,4], nr_neurons_List=[5000,4000,3000]):  
+        inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
     #add 1D convolutions
+        x = inputs
         for i, (nr_filters, kernelWidth) in enumerate(zip(nr_filters_list, kernel_width_list)):
             convParamDict = dict()
             convParamDict["name"] = "conv1D_" + str(i + 1)
@@ -50,21 +50,15 @@ class HiCGAN():
             convParamDict["data_format"]="channels_last"
             if kernelWidth > 1:
                 convParamDict["padding"] = "same"
-            model.add(Conv1D(**convParamDict))
+            x = Conv1D(**convParamDict)(x)
         #flatten the output of the convolutions
-        model.add(Flatten(name="flatten_1"))
-        #add the requested number of dense layers and dropout
-        for i, nr_neurons in enumerate(nr_neurons_List):
-            layerName = "dense_" + str(i+1)
-            model.add(Dense(nr_neurons,activation="relu",kernel_regularizer="l2",name=layerName))
-            layerName = "dropout_" + str(i+1)
-            model.add(Dropout(0.5, name=layerName))
-        #add the output layer (corresponding to a predicted submatrix along the diagonal of a Hi-C matrix)
-        nr_outputNeurons = int(1/2 * self.INPUT_SIZE * (self.INPUT_SIZE + 1)) #always an int, even*odd=even    
-        model.add(Dense(nr_outputNeurons,activation="relu",kernel_regularizer="l2",name="upper_triangle"))
-        model.add(CustomReshapeLayer(self.INPUT_SIZE, name="symmetric_matrix_layer"))
-        model.add(SymmetricFromTriuLayer())
-        model.add(tf.keras.layers.Lambda(lambda z: tf.expand_dims(z, axis=-1)))
+        x = Conv1D(filters=64, strides=3, kernel_size=4, data_format="channels_last", activation="sigmoid", padding="same", name="conv1D_final")(x)
+        y = tf.keras.layers.Permute((2,1))(x)
+        x = tf.keras.layers.Add()([x, y])
+        x = tf.keras.layers.Reshape((64,64,1))(x)
+        model = tf.keras.Model(inputs=inputs, outputs=x)
+        #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
+        #model.summary()
         return model
 
     @staticmethod
