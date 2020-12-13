@@ -249,6 +249,7 @@ class HiCGAN():
                 disc_loss_batches.append(disc_loss)
             gen_loss_train.append(np.mean(gen_loss_batches))
             disc_loss_train.append(np.mean(disc_loss_batches))
+            del gen_loss_batches, disc_loss_batches
             # Validation
             gen_loss_batches = []
             disc_loss_batches = []
@@ -258,10 +259,11 @@ class HiCGAN():
                 disc_loss_batches.append(disc_loss)
             gen_loss_val.append(np.mean(gen_loss_batches))
             disc_loss_val.append(np.mean(disc_loss_batches))
+            del gen_loss_batches, disc_loss_batches
             
             # saving (checkpoint) the model every 20 epochs
             if (epoch + 1) % 20 == 0:
-                self.checkpoint.save(file_prefix = self.checkpoint_prefix)
+                #self.checkpoint.save(file_prefix = self.checkpoint_prefix)
                 #plot loss
                 utils.plotLoss(pLossValueLists=[gen_loss_train, gen_loss_val, disc_loss_train, disc_loss_val], 
                             pNameList=["gen.loss train", "gen.loss val", "disc.loss train", "disc.loss val"], 
@@ -274,6 +276,7 @@ class HiCGAN():
                                     discLossVal=disc_loss_val)
                 self.generator.save(filepath=os.path.join(self.log_dir, "generator_{:05d}.h5".format(epoch)), save_format="h5")
                 self.discriminator.save(filepath=os.path.join(self.log_dir, "discriminator_{:05d}.h5".format(epoch)), save_format="h5")
+            
 
         self.checkpoint.save(file_prefix = self.checkpoint_prefix)
         utils.plotLoss(pLossValueLists=[gen_loss_train, gen_loss_val, disc_loss_train, disc_loss_val], 
