@@ -18,7 +18,7 @@ class HiCGAN():
         self.INPUT_CHANNELS = 1
         self.INPUT_SIZE = 64
         self.NR_FACTORS = 14
-        self.LAMBDA = 100
+        self.LAMBDA = 10000
         self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         self.generator_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
         self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
