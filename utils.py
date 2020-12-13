@@ -146,7 +146,7 @@ def plotMatrix(pMatrix, pFilename, pTitle):
     ax1.set_title(str(pTitle))
     fig1.colorbar(cs)
     fig1.savefig(pFilename)
-    fig1.close()
+    plt.close(fig1)
     del fig1, ax1
 
 def plotLoss(pLossValueLists, pNameList, pFilename, useLogscale=False):
@@ -182,7 +182,7 @@ def plotLoss(pLossValueLists, pNameList, pFilename, useLogscale=False):
     ax1.grid(True, which="both")
     ax1.legend(pNameList, loc='upper right')
     fig1.savefig(pFilename)
-    fig1.close()
+    plt.close(fig1)
     del fig1, ax1
 
 def rebuildMatrix(pArrayOfTriangles, pWindowSize, pFlankingSize=None, pMaxDist=None, pStepsize=1):
@@ -336,7 +336,7 @@ def plotChromatinFactors_boxplots(pChromFactorArray, pFilename, pBinSize=None, p
     ax1.set_ylabel("Chromatin factor signal value")
     fig1.tight_layout()
     fig1.savefig(pFilename)
-    fig1.close()
+    plt.close(fig1)
     del fig1, ax1
 
 def plotChromatinFactors_lineplots(pChromFactorArray, pFilename, pBinSize, pStartbin, pAxTitle=None, pFactorNames=None):
@@ -378,7 +378,7 @@ def plotChromatinFactors_lineplots(pChromFactorArray, pFilename, pBinSize, pStar
     fig1.text(0.04, 0.5, 'signal value', va='center', rotation='vertical')
     fig1.suptitle("Chromatin factors")
     fig1.savefig(pFilename)
-    fig1.close()
+    plt.close(fig1)
     del fig1, axs1
 
 def clampArray(pArray):
@@ -646,7 +646,7 @@ def plotPearsonCorrelationDf(pResultsDfList, pLegendList, pOutfile, pMethod="pea
             msg += "Renamed outfile to {:s}".format(outfile)
             print(msg)
         fig1.savefig(outfile)
-    fig1.close()
+    plt.close(fig1)
     del fig1, ax1
 
 def maskFunc(pArray, pWindowSize=0):
