@@ -258,7 +258,11 @@ class HiCGAN():
                 gen_loss, disc_loss = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
                 gen_loss_batches.append(gen_loss)
                 disc_loss_batches.append(disc_loss)
-                train_pbar.set_postfix( {"loss": "{:.4f}".format(gen_loss)} )
+                if epoch == 0:
+                    train_pbar.set_postfix( {"loss": "{:.4f}".format(gen_loss)} )
+                else:
+                    train_pbar.set_postfix( {"train loss": "{:.4f}".format(gen_loss),
+                                             "val loss": "{:.4f}".format(gen_loss_val[-1])} )
             gen_loss_train.append(np.mean(gen_loss_batches))
             disc_loss_train.append(np.mean(disc_loss_batches))
             del gen_loss_batches, disc_loss_batches
