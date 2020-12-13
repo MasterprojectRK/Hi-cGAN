@@ -231,6 +231,8 @@ class HiCGAN():
             axs1[i].imshow(display_list[i] * 0.5 + 0.5)
             axs1[i].set_title(titleList[i])
         fig1.savefig(figname)
+        plt.close(fig1)
+        del fig1, axs1
 
     def fit(self, train_ds, epochs, test_ds, steps_per_epoch: int):
         gen_loss_train = []
