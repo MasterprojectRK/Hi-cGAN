@@ -112,7 +112,7 @@ def training(trainmatrices,
 
     #define the load params for the containers
     loadParams = {"scaleFeatures": True,
-                  "clampFeatures": True,
+                  "clampFeatures": False,
                   "scaleTargets": True,
                   "windowsize": windowsize,
                   "flankingsize": windowsize,
