@@ -19,7 +19,7 @@ class HiCGAN():
         self.INPUT_SIZE = 64
         self.NR_FACTORS = 14
         self.LAMBDA = lambda_pixel
-        self.tv_loss_Weight = 2e-8 
+        self.tv_loss_Weight = 1e-10 #2e-8 
         self.loss_type_pixel = loss_type_pixel
         self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         self.generator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
