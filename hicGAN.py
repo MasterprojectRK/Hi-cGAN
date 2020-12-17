@@ -229,10 +229,11 @@ class HiCGAN():
 
     def generate_images(self, model, test_input, tar, epoch: int):
         prediction = model(test_input, training=True)
+        pred_mse = tf.reduce_mean(tf.square( tar["out_matrixData"][0], prediction[0] ))
         figname = "testpred_epoch_{:05d}.png".format(epoch)
         figname = os.path.join(self.log_dir, figname)
         display_list = [test_input["factorData"][0], tar["out_matrixData"][0], prediction[0]]
-        titleList = ['Input Image', 'Ground Truth', 'Predicted Image']
+        titleList = ['Input Image', 'Ground Truth', 'Predicted Image (MSE: {:.5f})'.format(pred_mse)]
 
         fig1, axs1 = plt.subplots(1,len(display_list), figsize=(15,15))
         for i in range(len(display_list)):
