@@ -38,12 +38,16 @@ import records
               default=2, show_default=True)
 @click.option("--lossWeightPixel", "-lwp", required=False,
               type=click.FloatRange(min=1e-10), 
-              default=1000., show_default=True, 
+              default=10000., show_default=True, 
               help="loss weight for L1/L2 error of generator")
-@click.option("--lossTypePixel", "-etp", required=False,
+@click.option("--lossTypePixel", "-ltp", required=False,
              type=click.Choice(["L1", "L2"]), 
              default="L2", show_default=True,
              help="Type of loss to use per-pixel")
+@click.option("--lossWeightTv", "-lvt", required=False,
+             type=click.FloatRange(min=0.0),
+             default=1e-10, show_default=True,
+             help="loss weight for TV loss of generator")
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -55,7 +59,8 @@ def training(trainmatrices,
              outfolder,
              epochs,
              lossweightpixel,
-             losstypepixel):
+             losstypepixel,
+             lossweighttv):
     
     paramDict = locals().copy()
 
@@ -186,7 +191,7 @@ def training(trainmatrices,
     validationDs = validationDs.batch(batchsize)
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     
-    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, lambda_pixel=lossweightpixel, loss_type_pixel=losstypepixel)
+    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, lambda_pixel=lossweightpixel, loss_type_pixel=losstypepixel, tv_weight=lossweighttv)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
     hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
 

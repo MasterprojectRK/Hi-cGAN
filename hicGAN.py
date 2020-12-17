@@ -11,7 +11,10 @@ import utils
 
 
 class HiCGAN():
-    def __init__(self, log_dir: str, lambda_pixel: float, loss_type_pixel: str): 
+    def __init__(self, log_dir: str, 
+                    lambda_pixel: float = 1e-5, 
+                    loss_type_pixel: str = "L2",
+                    tv_weight: float = 1e-10): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
@@ -19,7 +22,7 @@ class HiCGAN():
         self.INPUT_SIZE = 64
         self.NR_FACTORS = 14
         self.LAMBDA = lambda_pixel
-        self.tv_loss_Weight = 1e-10 #2e-8 
+        self.tv_loss_Weight = tv_weight
         self.loss_type_pixel = loss_type_pixel
         self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         self.generator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
