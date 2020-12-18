@@ -48,6 +48,9 @@ import records
              type=click.FloatRange(min=0.0),
              default=1e-10, show_default=True,
              help="loss weight for TV loss of generator")
+@click.option("--pretrainedIntroModel", "-ptm", required=False,
+             type=click.Path(exists=True, dir_okay=False, readable=True),
+             help="pretrained model for 1D-2D conversion of inputs")
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -60,7 +63,8 @@ def training(trainmatrices,
              epochs,
              lossweightpixel,
              losstypepixel,
-             lossweighttv):
+             lossweighttv,
+             pretrainedintromodel):
     
     paramDict = locals().copy()
 
@@ -192,6 +196,8 @@ def training(trainmatrices,
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     
     hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, lambda_pixel=lossweightpixel, loss_type_pixel=losstypepixel, tv_weight=lossweighttv)
+    if pretrainedintromodel is not None:
+        hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
     hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
 

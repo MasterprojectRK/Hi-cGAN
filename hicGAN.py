@@ -28,6 +28,8 @@ class HiCGAN():
         self.generator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
         self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
 
+        self.generator_intro_model = self.oneD_twoD_conversion()
+        self.discriminator_intro_model = self.oneD_twoD_conversion()
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
@@ -62,7 +64,7 @@ class HiCGAN():
         y = tf.keras.layers.Permute((2,1))(x)
         x = tf.keras.layers.Add()([x, y])
         x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
-        model = tf.keras.Model(inputs=inputs, outputs=x)
+        model = tf.keras.Model(inputs=inputs, outputs=x, name="crazy_intro_model")
         #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #model.summary()
         return model
@@ -96,7 +98,7 @@ class HiCGAN():
     def Generator(self):
         inputs = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE,self.NR_FACTORS], name="factorData")
 
-        twoD_conversion = self.oneD_twoD_conversion()
+        twoD_conversion = self.generator_intro_model
 
         down_stack = [
             #HiCGAN.downsample(64, 4, apply_batchnorm=False), # (bs, 128, 128, 64)
@@ -168,7 +170,7 @@ class HiCGAN():
 
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        twoD_conversion = self.oneD_twoD_conversion()
+        twoD_conversion = self.discriminator_intro_model
 
         x = tf.keras.layers.concatenate([twoD_conversion(inp), tar]) # (bs, 80 80, 3+1=4)
 
@@ -338,6 +340,27 @@ class HiCGAN():
                                                   custom_objects={"CustomReshapeLayer": CustomReshapeLayer(self.INPUT_SIZE),
                                                                   "SymmetricFromTriuLayer": SymmetricFromTriuLayer()})
         self.generator = trainedModel
+
+    def loadIntroModel(self, trainedModelPath: str):
+        try:
+            introModel = tf.keras.models.load_model(filepath=trainedModelPath)
+        except Exception as e:
+            msg = str(e)
+            msg += "\nError: failed to load trained model"
+            raise ValueError(msg)
+        inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
+        x = introModel(inputs)
+        x = CustomReshapeLayer(self.INPUT_SIZE)(x)
+        x_T = tf.keras.layers.Permute((2,1))(x)
+        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
+        x = tf.keras.layers.Add()([x, x_T, diag])
+        out = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
+        introModel_gen = tf.keras.models.Model(inputs=inputs, outputs=out, name="gen_intro_preloaded")
+        introModel_disc = tf.keras.models.Model(inputs=inputs, outputs=out, name="disc_intro_preloaded")
+        self.generator_intro_model = introModel_gen
+        self.discriminator_intro_model = introModel_disc
+        self.generator = self.Generator()  
+        self.discriminator = self.Discriminator()      
 
 class CustomReshapeLayer(tf.keras.layers.Layer):
     '''
