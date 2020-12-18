@@ -145,10 +145,8 @@ class HiCGAN():
             x = tf.keras.layers.Concatenate()([x, skip])
 
         x = last(x)
-        x_T = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE))(x)
-        x_T = tf.keras.layers.Permute((2,1))(x_T)
-        x_T = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x_T)
-        x = tf.keras.layers.add([x, x_T])
+        x_T = tf.keras.layers.Permute((2,1,3))(x)
+        x = tf.keras.layers.Add()([x, x_T])
 
         return tf.keras.Model(inputs=inputs, outputs=x)
 
@@ -336,10 +334,15 @@ class HiCGAN():
 
     
     def loadGenerator(self, trainedModelPath: str):
-        trainedModel = tf.keras.models.load_model(filepath=trainedModelPath, 
+        try:
+            trainedModel = tf.keras.models.load_model(filepath=trainedModelPath, 
                                                   custom_objects={"CustomReshapeLayer": CustomReshapeLayer(self.INPUT_SIZE),
                                                                   "SymmetricFromTriuLayer": SymmetricFromTriuLayer()})
-        self.generator = trainedModel
+            self.generator = trainedModel
+        except Exception as e:
+            msg = str(e)
+            msg += "\nError: failed to load trained model"
+            raise ValueError(msg)
 
     def loadIntroModel(self, trainedModelPath: str):
         try:
