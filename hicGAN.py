@@ -168,9 +168,16 @@ class HiCGAN():
 
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        twoD_conversion = self.discriminator_intro_model
-
-        x = tf.keras.layers.concatenate([twoD_conversion(inp), tar]) # (bs, 80 80, 3+1=4)
+        #twoD_conversion = self.discriminator_intro_model
+        x = Flatten()(inp)
+        x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = CustomReshapeLayer(self.INPUT_SIZE)(x)
+        x_T = tf.keras.layers.Permute((2,1))(x)
+        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
+        x = tf.keras.layers.Add()([x, x_T, diag])
+        x = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
+        x = tf.keras.layers.concatenate([x, tar]) # (bs, 80 80, 3+1=4)
 
         down1 = HiCGAN.downsample(64, 4, False)(x) # (bs, 128, 128, 64)
         down2 = HiCGAN.downsample(128, 4)(down1) # (bs, 64, 64, 128)
