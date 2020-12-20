@@ -14,12 +14,15 @@ class HiCGAN():
     def __init__(self, log_dir: str, 
                     lambda_pixel: float = 1e-5, 
                     loss_type_pixel: str = "L2",
-                    tv_weight: float = 1e-10): 
+                    tv_weight: float = 1e-10,
+                    input_size: int = 256): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
         self.INPUT_CHANNELS = 1
-        self.INPUT_SIZE = 64
+        self.INPUT_SIZE = 256
+        if input_size in [64,128,256]:
+            self.INPUT_SIZE = input_size
         self.NR_FACTORS = 14
         self.LAMBDA = lambda_pixel
         self.tv_loss_Weight = tv_weight
@@ -60,7 +63,7 @@ class HiCGAN():
             x = BatchNormalization()(x)
             x = tf.keras.layers.Activation("sigmoid")(x)
         #make the shape of a 2D-image
-        x = Conv1D(filters=64, strides=3, kernel_size=4, data_format="channels_last", activation="sigmoid", padding="same", name="conv1D_final")(x)
+        x = Conv1D(filters=self.INPUT_SIZE, strides=3, kernel_size=4, data_format="channels_last", activation="sigmoid", padding="same", name="conv1D_final")(x)
         y = tf.keras.layers.Permute((2,1))(x)
         x = tf.keras.layers.Add()([x, y])
         x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
@@ -77,7 +80,7 @@ class HiCGAN():
                                 kernel_initializer=initializer, use_bias=False))
         if apply_batchnorm:
             result.add(BatchNormalization())
-        result.add(LeakyReLU())
+        result.add(LeakyReLU(alpha=0.2))
         return result
 
     @staticmethod
@@ -99,10 +102,10 @@ class HiCGAN():
         inputs = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE,self.NR_FACTORS], name="factorData")
 
         twoD_conversion = self.generator_intro_model
-
+        #the downsampling part of the network, defined for 256x256 images
         down_stack = [
-            #HiCGAN.downsample(64, 4, apply_batchnorm=False), # (bs, 128, 128, 64)
-            #HiCGAN.downsample(128, 4), # (bs, 64, 64, 128)
+            HiCGAN.downsample(64, 4, apply_batchnorm=False), # (bs, 128, 128, 64)
+            HiCGAN.downsample(128, 4), # (bs, 64, 64, 128)
             HiCGAN.downsample(256, 4), # (bs, 32, 32, 256)
             HiCGAN.downsample(512, 4), # (bs, 16, 16, 512)
             HiCGAN.downsample(512, 4), # (bs, 8, 8, 512)
@@ -110,16 +113,27 @@ class HiCGAN():
             HiCGAN.downsample(512, 4), # (bs, 2, 2, 512)
             HiCGAN.downsample(512, 4), # (bs, 1, 1, 512)
         ]
+        #if the input images are smaller, leave out some layers accordingly
+        if self.INPUT_SIZE < 256:
+            down_stack = down_stack[1:]
+        if self.INPUT_SIZE < 128:
+            down_stack = down_stack[1:]
 
+        #the upsampling portion of the generator, designed for 256x256 images
         up_stack = [
             HiCGAN.upsample(512, 4, apply_dropout=True), # (bs, 2, 2, 1024)
             HiCGAN.upsample(512, 4, apply_dropout=True), # (bs, 4, 4, 1024)
             HiCGAN.upsample(512, 4, apply_dropout=True), # (bs, 8, 8, 1024)
             HiCGAN.upsample(512, 4), # (bs, 16, 16, 1024)
             HiCGAN.upsample(256, 4), # (bs, 32, 32, 512)
-            #HiCGAN.upsample(128, 4), # (bs, 64, 64, 256)
-            #HiCGAN.upsample(64, 4), # (bs, 128, 128, 128)
+            HiCGAN.upsample(128, 4), # (bs, 64, 64, 256)
+            HiCGAN.upsample(64, 4), # (bs, 128, 128, 128)
         ]
+        #for smaller images, take layers away, otherwise won't work
+        if self.INPUT_SIZE < 256:
+            up_stack = up_stack[:-1]
+        if self.INPUT_SIZE < 128:
+            up_stack = up_stack[:-1]
 
         initializer = tf.random_normal_initializer(0., 0.02)
         last = tf.keras.layers.Conv2DTranspose(self.OUTPUT_CHANNELS, 4,
@@ -177,20 +191,18 @@ class HiCGAN():
         diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
         x = tf.keras.layers.Add()([x, x_T, diag])
         x = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
-        x = tf.keras.layers.concatenate([x, tar]) # (bs, 80 80, 3+1=4)
-
-        down1 = HiCGAN.downsample(64, 4, False)(x) # (bs, 128, 128, 64)
-        down2 = HiCGAN.downsample(128, 4)(down1) # (bs, 64, 64, 128)
-        down3 = HiCGAN.downsample(256, 4)(down2) # (bs, 32, 32, 256)
-        conv = Conv2D(512, 4, strides=1,
-                        kernel_initializer=initializer,
-                        use_bias=False)(down3) # (bs, 31, 31, 512)
-        batchnorm1 = BatchNormalization()(conv)
-        leaky_relu = LeakyReLU()(batchnorm1)
-        last = Conv2D(1, 4, strides=1,
-                        kernel_initializer=initializer)(leaky_relu) # (bs, 30, 30, 1)
-
-        return tf.keras.Model(inputs=[inp, tar], outputs=last)
+        x = tf.keras.layers.concatenate([x, tar])
+        #Patch-GAN (Isola et al.)
+        d = HiCGAN.downsample(64, 4, False)(x) # (bs, inp.size/2, inp.size/2, 64)
+        d = HiCGAN.downsample(128, 4)(d) # (bs, inp.size/4, inp.size/4, 128)
+        d = HiCGAN.downsample(256, 4)(d) # (bs, inp.size/8, inp.size/8, 256)
+        d = Conv2D(512, 4, strides=1, padding="same", kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 512)
+        d = BatchNormalization()(d)
+        d = LeakyReLU(alpha=0.2)(d)
+        d = Conv2D(1, 4, strides=1, padding="same",
+                        kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 1)
+        d = tf.keras.layers.Activation("sigmoid")(d)
+        return tf.keras.Model(inputs=[inp, tar], outputs=d)
 
     def discriminator_loss(self, disc_real_output, disc_generated_output):
         real_loss = self.loss_object(tf.ones_like(disc_real_output), disc_real_output)

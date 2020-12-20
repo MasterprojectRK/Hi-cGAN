@@ -27,9 +27,9 @@ import records
               type=click.Path(exists=True, file_okay=False, readable=True), multiple=True,
               help="Path where chromatin factors for validation reside (bigwig files). Use this option multiple times to specify more than one path. First path belongs to first validation matrix etc.")
 @click.option("--windowsize", "-ws", required=True,
-              type=click.IntRange(min=64), 
-              default=64, show_default=True,
-              help="Windowsize for submatrices. Must be integer >80 and (much) smaller than smallest chrom")
+              type=click.Choice(["64", "128", "256"]), 
+              default="64", show_default=True,
+              help="Windowsize for submatrices. 64, 128 and 256 are supported")
 @click.option("--outfolder", "-o", required=True,
               type=click.Path(exists=True, writable=True, file_okay=False), 
               help="Folder where trained model and diverse outputs will be stored")
@@ -69,6 +69,7 @@ def training(trainmatrices,
     paramDict = locals().copy()
 
     #few constants
+    windowsize = int(windowsize)
     recordsize = 2000
     debugstate = None
     figuretype = "png"
@@ -195,7 +196,7 @@ def training(trainmatrices,
     validationDs = validationDs.batch(batchsize)
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     
-    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, lambda_pixel=lossweightpixel, loss_type_pixel=losstypepixel, tv_weight=lossweighttv)
+    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, lambda_pixel=lossweightpixel, loss_type_pixel=losstypepixel, tv_weight=lossweighttv, input_size=windowsize)
     if pretrainedintromodel is not None:
         hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
