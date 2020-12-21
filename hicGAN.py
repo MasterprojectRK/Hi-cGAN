@@ -49,7 +49,7 @@ class HiCGAN():
 
     def oneD_twoD_conversion(self, nr_filters_list=[16,16,32,32,64], kernel_width_list=[4,4,4,4,4], nr_neurons_List=[5000,4000,3000]):  
         inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
-    #add 1D convolutions
+        #add 1D convolutions
         x = inputs
         for i, (nr_filters, kernelWidth) in enumerate(zip(nr_filters_list, kernel_width_list)):
             convParamDict = dict()
@@ -196,6 +196,7 @@ class HiCGAN():
         #x = tf.keras.layers.concatenate([x, tar])
         #Patch-GAN (Isola et al.)
         d = twoD_conversion(inp)
+        d = tf.keras.layers.Concatenate()([d, tar])
         if self.INPUT_SIZE > 64:
             d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
             d = HiCGAN.downsample(128, 4)(d)# (bs, inp.size/4, inp.size/4, 128)
