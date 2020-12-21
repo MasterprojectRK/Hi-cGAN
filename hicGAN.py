@@ -65,7 +65,9 @@ class HiCGAN():
         #make the shape of a 2D-image
         x = Conv1D(filters=self.INPUT_SIZE, strides=3, kernel_size=4, data_format="channels_last", activation="sigmoid", padding="same", name="conv1D_final")(x)
         y = tf.keras.layers.Permute((2,1))(x)
-        x = tf.keras.layers.Add()([x, y])
+        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
+        x = tf.keras.layers.Add()([x, y, diag])
+
         x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
         model = tf.keras.Model(inputs=inputs, outputs=x, name="crazy_intro_model")
         #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
@@ -111,13 +113,13 @@ class HiCGAN():
             HiCGAN.downsample(512, 4), # (bs, 8, 8, 512)
             HiCGAN.downsample(512, 4), # (bs, 4, 4, 512)
             HiCGAN.downsample(512, 4), # (bs, 2, 2, 512)
-            HiCGAN.downsample(512, 4), # (bs, 1, 1, 512)
+            HiCGAN.downsample(512, 4, apply_batchnorm=False), # (bs, 1, 1, 512)
         ]
         #if the input images are smaller, leave out some layers accordingly
         if self.INPUT_SIZE < 256:
-            down_stack = down_stack[1:]
+            down_stack = down_stack[:-2] + down_stack[-1:]
         if self.INPUT_SIZE < 128:
-            down_stack = down_stack[1:]
+            down_stack = down_stack[:-2] + down_stack[-1:]
 
         #the upsampling portion of the generator, designed for 256x256 images
         up_stack = [
@@ -129,18 +131,18 @@ class HiCGAN():
             HiCGAN.upsample(128, 4), # (bs, 64, 64, 256)
             HiCGAN.upsample(64, 4), # (bs, 128, 128, 128)
         ]
-        #for smaller images, take layers away, otherwise won't work
+        #for smaller images, take layers away, otherwise downsampling won't work
         if self.INPUT_SIZE < 256:
-            up_stack = up_stack[:-1]
+            up_stack = up_stack[:2] + up_stack[3:]
         if self.INPUT_SIZE < 128:
-            up_stack = up_stack[:-1]
+            up_stack = up_stack[:2] + up_stack[3:]
 
         initializer = tf.random_normal_initializer(0., 0.02)
         last = tf.keras.layers.Conv2DTranspose(self.OUTPUT_CHANNELS, 4,
                                                 strides=2,
                                                 padding='same',
                                                 kernel_initializer=initializer,
-                                                activation='tanh') # (bs, 256, 256, 3)
+                                                activation='sigmoid') # (bs, 256, 256, 3)
 
         x = inputs
         x = twoD_conversion(x)
@@ -182,19 +184,23 @@ class HiCGAN():
 
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        #twoD_conversion = self.discriminator_intro_model
-        x = Flatten()(inp)
-        x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
-        x = tf.keras.layers.LeakyReLU()(x)
-        x = CustomReshapeLayer(self.INPUT_SIZE)(x)
-        x_T = tf.keras.layers.Permute((2,1))(x)
-        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
-        x = tf.keras.layers.Add()([x, x_T, diag])
-        x = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
-        x = tf.keras.layers.concatenate([x, tar])
+        twoD_conversion = self.discriminator_intro_model
+        #x = Flatten()(inp)
+        #x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
+        #x = tf.keras.layers.LeakyReLU()(x)
+        #x = CustomReshapeLayer(self.INPUT_SIZE)(x)
+        #x_T = tf.keras.layers.Permute((2,1))(x)
+        #diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
+        #x = tf.keras.layers.Add()([x, x_T, diag])
+        #x = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
+        #x = tf.keras.layers.concatenate([x, tar])
         #Patch-GAN (Isola et al.)
-        d = HiCGAN.downsample(64, 4, False)(x) # (bs, inp.size/2, inp.size/2, 64)
-        d = HiCGAN.downsample(128, 4)(d) # (bs, inp.size/4, inp.size/4, 128)
+        d = twoD_conversion(inp)
+        if self.INPUT_SIZE > 64:
+            d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
+            d = HiCGAN.downsample(128, 4)(d)# (bs, inp.size/4, inp.size/4, 128)
+        else:    
+            d = HiCGAN.downsample(256, 4)(d)
         d = HiCGAN.downsample(256, 4)(d) # (bs, inp.size/8, inp.size/8, 256)
         d = Conv2D(512, 4, strides=1, padding="same", kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 512)
         d = BatchNormalization()(d)
