@@ -20,11 +20,15 @@ import utils
               type=click.Path(exists=True, writable=True),
               default="./", show_default=True,
               help="Output path for predicted coolers")
+@click.option("--multiplier", "-mul", required=False,
+             type=click.IntRange(min=1), 
+             default=10, show_default=True)
 @click.command()
 def prediction(trainedmodel, 
                 testchrompath,
                 testchroms,
-                outfolder
+                outfolder,
+                multiplier
                 ):
     binSizeInt = 25000
     scalefactors = True
@@ -34,7 +38,6 @@ def prediction(trainedmodel,
     flankingsize = windowsize
     maxdist = None
     batchSizeInt = 32
-    multiplier = 10
 
     
     #extract chromosome names from the input
