@@ -32,7 +32,6 @@ class HiCGAN():
         self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
 
         self.generator_intro_model = self.oneD_twoD_conversion()
-        self.discriminator_intro_model = self.oneD_twoD_conversion()
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
@@ -184,7 +183,7 @@ class HiCGAN():
 
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        twoD_conversion = self.discriminator_intro_model
+        twoD_conversion = self.oneD_twoD_conversion()
         #x = Flatten()(inp)
         #x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
         #x = tf.keras.layers.LeakyReLU()(x)
@@ -371,6 +370,7 @@ class HiCGAN():
             raise ValueError(msg)
 
     def loadIntroModel(self, trainedModelPath: str):
+        '''load pretrained model for 1D-2D conversion as defined by Farre et al.'''
         try:
             introModel = tf.keras.models.load_model(filepath=trainedModelPath)
         except Exception as e:
@@ -385,11 +385,8 @@ class HiCGAN():
         x = tf.keras.layers.Add()([x, x_T, diag])
         out = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
         introModel_gen = tf.keras.models.Model(inputs=inputs, outputs=out, name="gen_intro_preloaded")
-        introModel_disc = tf.keras.models.Model(inputs=inputs, outputs=out, name="disc_intro_preloaded")
         self.generator_intro_model = introModel_gen
-        self.discriminator_intro_model = introModel_disc
-        self.generator = self.Generator()  
-        self.discriminator = self.Discriminator()      
+        self.generator = self.Generator()    
 
 class CustomReshapeLayer(tf.keras.layers.Layer):
     '''
