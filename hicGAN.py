@@ -16,7 +16,8 @@ class HiCGAN():
                     lambda_disc: float = 0.5, 
                     loss_type_pixel: str = "L1",
                     tv_weight: float = 1e-10,
-                    input_size: int = 256): 
+                    input_size: int = 256,
+                    plot_frequency: int = 20): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
@@ -47,6 +48,8 @@ class HiCGAN():
                                     discriminator=self.discriminator)
 
         self.progress_plot_name = os.path.join(self.log_dir, "lossOverEpochs.png")
+        self.progress_plot_frequency = plot_frequency
+        self.example_plot_frequency = 5
 
     def oneD_twoD_conversion(self, nr_filters_list=[16,16,32,32,64], kernel_width_list=[4,4,4,4,4], nr_neurons_List=[5000,4000,3000]):  
         inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
@@ -277,7 +280,7 @@ class HiCGAN():
         disc_loss_val = []
         for epoch in range(epochs):
             #generate sample output
-            if epoch % 5 == 0:
+            if epoch % self.example_plot_frequency == 0:
                 for example_input, example_target in test_ds.take(1):
                     self.generate_images(self.generator, example_input, example_target, epoch)
             # Train
@@ -309,7 +312,7 @@ class HiCGAN():
             del gen_loss_batches, disc_loss_batches, train_pbar
             
             # saving (checkpoint) the model every 20 epochs
-            if (epoch + 1) % 20 == 0:
+            if (epoch + 1) % self.progress_plot_frequency == 0:
                 #self.checkpoint.save(file_prefix = self.checkpoint_prefix)
                 #plot loss
                 utils.plotLoss(pLossValueLists=[gen_loss_train, gen_loss_val, disc_loss_train, disc_loss_val], 
