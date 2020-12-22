@@ -36,18 +36,26 @@ import records
 @click.option("--epochs", "-ep", required=True,
               type=click.IntRange(min=1), 
               default=2, show_default=True)
+@click.option("--batchsize", "-bs", required=True,
+              type=click.IntRange(min=1, max=256), 
+              default=32, show_default=True, 
+              help="Batch size for training, choose integer in [1, 256]")
 @click.option("--lossWeightPixel", "-lwp", required=False,
               type=click.FloatRange(min=1e-10), 
-              default=10000., show_default=True, 
+              default=100.0, show_default=True, 
               help="loss weight for L1/L2 error of generator")
+@click.option("--lossWeightDisc", "-lwd", required=False,
+              type=click.FloatRange(min=1e-10),
+              default=0.5, show_default=True,
+              help="loss weight for the discriminator error")
 @click.option("--lossTypePixel", "-ltp", required=False,
              type=click.Choice(["L1", "L2"]), 
              default="L2", show_default=True,
-             help="Type of loss to use per-pixel")
+             help="Type of per-pixel loss to use for the generator; choose from L1 (mean abs. error) or L2 (mean squared error)")
 @click.option("--lossWeightTv", "-lvt", required=False,
              type=click.FloatRange(min=0.0),
              default=1e-10, show_default=True,
-             help="loss weight for TV loss of generator")
+             help="loss weight for Total-Variation-loss of generator; higher value - more smoothing")
 @click.option("--pretrainedIntroModel", "-ptm", required=False,
              type=click.Path(exists=True, dir_okay=False, readable=True),
              help="pretrained model for 1D-2D conversion of inputs")
@@ -55,6 +63,10 @@ import records
              type=click.Choice(["png", "pdf", "svg"]), 
              default="png", show_default=True,
              help="Figure type for all plots")
+@click.option("--recordsize", "-rs", required=False,
+             type=click.IntRange(min=10), 
+             default=2000, show_default=True,
+             help="Approx. size (number of samples) of the tfRecords used in the data pipeline for training. Lower values = less memory consumption, but maybe longer runtime")
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -65,17 +77,18 @@ def training(trainmatrices,
              windowsize,
              outfolder,
              epochs,
+             batchsize,
              lossweightpixel,
+             lossweightdisc,
              losstypepixel,
              lossweighttv,
              pretrainedintromodel,
-             figuretype):
+             figuretype,
+             recordsize):
 
     #few constants
     windowsize = int(windowsize)
-    recordsize = 2000
     debugstate = None
-    batchsize = 32
     paramDict = locals().copy()
 
     #remove spaces, commas and "chr" from the train and val chromosome lists
@@ -198,7 +211,12 @@ def training(trainmatrices,
     validationDs = validationDs.batch(batchsize)
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     
-    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, lambda_pixel=lossweightpixel, loss_type_pixel=losstypepixel, tv_weight=lossweighttv, input_size=windowsize)
+    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, 
+                                lambda_pixel=lossweightpixel,
+                                lambda_disc=lossweightdisc, 
+                                loss_type_pixel=losstypepixel, 
+                                tv_weight=lossweighttv, 
+                                input_size=windowsize)
     if pretrainedintromodel is not None:
         hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
