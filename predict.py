@@ -1,6 +1,7 @@
 import click
 import numpy as np
 import os
+import csv
 import tensorflow as tf
 import dataContainer
 import records
@@ -39,7 +40,8 @@ def prediction(trainedmodel,
     maxdist = None
     batchSizeInt = 32
 
-    
+    paramDict = locals().copy()
+        
     #extract chromosome names from the input
     chromNameList = testchroms.replace(",", " ").rstrip().split(" ")  
     chromNameList = sorted([x.lstrip("chr") for x in chromNameList])
@@ -101,6 +103,11 @@ def prediction(trainedmodel,
                       pOutfile=matrixname, 
                       pChromosomeList=chromNameList)
 
+    parameterFile = os.path.join(outfolder, "predParams.csv")    
+    with open(parameterFile, "w") as csvfile:
+        dictWriter = csv.DictWriter(csvfile, fieldnames=sorted(list(paramDict.keys())))
+        dictWriter.writeheader()
+        dictWriter.writerow(paramDict)
 
 if __name__ == "__main__":
     prediction() #pylint: disable=no-value-for-parameter
