@@ -51,6 +51,10 @@ import records
 @click.option("--pretrainedIntroModel", "-ptm", required=False,
              type=click.Path(exists=True, dir_okay=False, readable=True),
              help="pretrained model for 1D-2D conversion of inputs")
+@click.option("--figuretype", "-ft", required=False,
+             type=click.Choice(["png", "pdf", "svg"]), 
+             default="png", show_default=True,
+             help="Figure type for all plots")
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -64,17 +68,15 @@ def training(trainmatrices,
              lossweightpixel,
              losstypepixel,
              lossweighttv,
-             pretrainedintromodel):
-    
-    paramDict = locals().copy()
+             pretrainedintromodel,
+             figuretype):
 
     #few constants
     windowsize = int(windowsize)
     recordsize = 2000
     debugstate = None
-    figuretype = "png"
-    EPOCHS = epochs
     batchsize = 32
+    paramDict = locals().copy()
 
     #remove spaces, commas and "chr" from the train and val chromosome lists
     #ensure each chrom name is used only once, but allow the same chrom for train and validation
@@ -200,6 +202,7 @@ def training(trainmatrices,
     if pretrainedintromodel is not None:
         hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
+    hicGanModel.fit(train_ds=trainDs, epochs=epochs, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
 
     for tfRecordfile in traindataRecords + valdataRecords:
         if os.path.exists(tfRecordfile):
