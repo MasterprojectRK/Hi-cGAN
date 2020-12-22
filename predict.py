@@ -108,6 +108,10 @@ def prediction(trainedmodel,
         dictWriter = csv.DictWriter(csvfile, fieldnames=sorted(list(paramDict.keys())))
         dictWriter.writeheader()
         dictWriter.writerow(paramDict)
+    
+    for tfrecordfile in tfRecordFilenames:
+        if os.path.exists(tfrecordfile):
+            os.remove(tfrecordfile)
 
 if __name__ == "__main__":
     prediction() #pylint: disable=no-value-for-parameter
