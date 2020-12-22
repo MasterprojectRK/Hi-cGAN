@@ -200,7 +200,10 @@ def training(trainmatrices,
     if pretrainedintromodel is not None:
         hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
-    hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
+
+    for tfRecordfile in traindataRecords + valdataRecords:
+        if os.path.exists(tfRecordfile):
+            os.remove(tfRecordfile)
 
 if __name__ == "__main__":
     training() #pylint: disable=no-value-for-parameter
