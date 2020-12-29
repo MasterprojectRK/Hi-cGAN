@@ -17,7 +17,9 @@ class HiCGAN():
                     loss_type_pixel: str = "L1",
                     tv_weight: float = 1e-10,
                     input_size: int = 256,
-                    plot_frequency: int = 20): 
+                    plot_frequency: int = 20,
+                    learning_rate: float = 2e-5,
+                    adam_beta_1: float = 0.5): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
@@ -31,8 +33,8 @@ class HiCGAN():
         self.tv_loss_Weight = tv_weight
         self.loss_type_pixel = loss_type_pixel
         self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        self.generator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
-        self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
+        self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
+        self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
 
         self.generator_intro_model = self.oneD_twoD_conversion()
         self.generator = self.Generator()

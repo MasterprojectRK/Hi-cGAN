@@ -56,6 +56,14 @@ import records
              type=click.FloatRange(min=0.0),
              default=1e-10, show_default=True,
              help="loss weight for Total-Variation-loss of generator; higher value - more smoothing")
+@click.option("--learningRate", "-lr", required=False,
+              type=click.FloatRange(min=1e-10, max=1.0), 
+              default=2e-5, show_default=True,
+              help="learning rate for Adam optimizer")
+@click.option("--beta1", "-b1", required=False,
+              type=click.FloatRange(min=1e-2, max=1.0),
+              default=0.5, show_default=True,
+              help="beta1 parameter for Adam optimizer")
 @click.option("--pretrainedIntroModel", "-ptm", required=False,
              type=click.Path(exists=True, dir_okay=False, readable=True),
              help="pretrained model for 1D-2D conversion of inputs")
@@ -82,6 +90,8 @@ def training(trainmatrices,
              lossweightdisc,
              losstypepixel,
              lossweighttv,
+             learningrate,
+             beta1,
              pretrainedintromodel,
              figuretype,
              recordsize):
@@ -216,7 +226,9 @@ def training(trainmatrices,
                                 lambda_disc=lossweightdisc, 
                                 loss_type_pixel=losstypepixel, 
                                 tv_weight=lossweighttv, 
-                                input_size=windowsize)
+                                input_size=windowsize,
+                                learning_rate=learningrate,
+                                adam_beta_1=beta1)
     if pretrainedintromodel is not None:
         hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
