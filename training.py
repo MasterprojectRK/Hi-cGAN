@@ -64,6 +64,9 @@ import records
               type=click.FloatRange(min=1e-2, max=1.0),
               default=0.5, show_default=True,
               help="beta1 parameter for Adam optimizer")
+@click.option("--flipsamples", "-fs", required=False,
+             type=bool, default=False, show_default=True,
+             help="Flip training matrices and chromatin features (data augmentation)")
 @click.option("--pretrainedIntroModel", "-ptm", required=False,
              type=click.Path(exists=True, dir_okay=False, readable=True),
              help="pretrained model for 1D-2D conversion of inputs")
@@ -92,6 +95,7 @@ def training(trainmatrices,
              lossweighttv,
              learningrate,
              beta1,
+             flipsamples,
              pretrainedintromodel,
              figuretype,
              recordsize):
@@ -210,8 +214,11 @@ def training(trainmatrices,
                                         num_parallel_reads=tf.data.experimental.AUTOTUNE,
                                         compression_type="GZIP")
     trainDs = trainDs.map(lambda x: records.parse_function(x, storedFeaturesDict), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    if flipsamples:
+        flippedDs = trainDs.map(lambda a,b: records.mirror_function(a["factorData"], b["out_matrixData"]))
+        trainDs = trainDs.concatenate(flippedDs)
     trainDs = trainDs.shuffle(buffer_size=shuffleBufferSize, reshuffle_each_iteration=True)
-    trainDs = trainDs.batch(batchsize, drop_remainder=False)
+    trainDs = trainDs.batch(batchsize, drop_remainder=True)
     trainDs = trainDs.prefetch(tf.data.experimental.AUTOTUNE)
     #build the input streams for validation
     validationDs = tf.data.TFRecordDataset(valdataRecords, 
@@ -221,6 +228,9 @@ def training(trainmatrices,
     validationDs = validationDs.batch(batchsize)
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     
+    steps_per_epoch = int( np.floor(nr_trainingSamples / batchsize) )
+    if flipsamples:
+        steps_per_epoch *= 2
     hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, 
                                 lambda_pixel=lossweightpixel,
                                 lambda_disc=lossweightdisc, 
@@ -232,7 +242,7 @@ def training(trainmatrices,
     if pretrainedintromodel is not None:
         hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
-    hicGanModel.fit(train_ds=trainDs, epochs=epochs, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
+    hicGanModel.fit(train_ds=trainDs, epochs=epochs, test_ds=validationDs, steps_per_epoch=steps_per_epoch)
 
     for tfRecordfile in traindataRecords + valdataRecords:
         if os.path.exists(tfRecordfile):
