@@ -317,10 +317,12 @@ class HiCGAN():
             if (epoch + 1) % self.progress_plot_frequency == 0:
                 #self.checkpoint.save(file_prefix = self.checkpoint_prefix)
                 #plot loss
-                utils.plotLoss(pLossValueLists=[gen_loss_train, gen_loss_val, disc_loss_train, disc_loss_val], 
-                            pNameList=["gen.loss train", "gen.loss val", "disc.loss train", "disc.loss val"], 
-                            pFilename=self.progress_plot_name,
-                            useLogscale=True)
+                utils.plotLoss(pGeneratorLossValueLists=[gen_loss_train, gen_loss_val],
+                              pDiscLossValueLists=[disc_loss_train, disc_loss_val],
+                              pGeneratorLossNameList=["training", "validation"],
+                              pDiscLossNameList=["training", "validation"],
+                              pFilename=self.progress_plot_name,
+                              useLogscaleList=[True, False])
                 np.savez(os.path.join(self.log_dir, "lossValues_{:05d}.npz".format(epoch)), 
                                     genLossTrain=gen_loss_train, 
                                     genLossVal=gen_loss_val, 
@@ -331,10 +333,12 @@ class HiCGAN():
             
 
         self.checkpoint.save(file_prefix = self.checkpoint_prefix)
-        utils.plotLoss(pLossValueLists=[gen_loss_train, gen_loss_val, disc_loss_train, disc_loss_val], 
-                            pNameList=["gen.loss train", "gen.loss val", "disc.loss train", "disc.loss val"], 
-                            pFilename=self.progress_plot_name,
-                            useLogscale=True)
+        utils.plotLoss(pGeneratorLossValueLists=[gen_loss_train, gen_loss_val],
+                       pDiscLossValueLists=[disc_loss_train, disc_loss_val],
+                       pGeneratorLossNameList=["training", "validation"],
+                       pDiscLossNameList=["training", "validation"],
+                       pFilename=self.progress_plot_name,
+                       useLogscaleList=[True, False])
         np.savez(os.path.join(self.log_dir, "lossValues_{:05d}.npz".format(epoch)), 
                                     genLossTrain=gen_loss_train, 
                                     genLossVal=gen_loss_val, 

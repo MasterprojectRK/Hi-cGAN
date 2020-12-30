@@ -149,18 +149,24 @@ def plotMatrix(pMatrix, pFilename, pTitle):
     plt.close(fig1)
     del fig1, ax1
 
-def plotLoss(pLossValueLists, pNameList, pFilename, useLogscale=False):
+def plotLoss(pGeneratorLossValueLists, pDiscLossValueLists, pGeneratorLossNameList, pDiscLossNameList, pFilename, useLogscaleList=[False, False]):
     #plot loss and validation loss over epoch numbers
     fig1, ax1 = plt.subplots(figsize=(6,4.5))
-    nr_epochs = len(pLossValueLists[0])
+    nr_epochs = len(pGeneratorLossValueLists[0])
     x_vals = np.arange(nr_epochs) + 1
-    for lossVals, _ in zip(pLossValueLists, pNameList):
-        ax1.plot(x_vals, lossVals)
+    for generatorLossVals, _ in zip(pGeneratorLossValueLists, pGeneratorLossNameList):
+        ax1.plot(x_vals, generatorLossVals)
     ax1.set_title('model loss')
-    ax1.set_ylabel('loss')
+    ax1.set_ylabel('generator loss')
     ax1.set_xlabel('epoch')
-    if useLogscale:
+    if useLogscaleList[0]:
         ax1.set_yscale('log')
+    ax2 = ax1.twinx()
+    for discLossVals, _ in zip(pDiscLossValueLists, pDiscLossNameList):
+        ax2.plot(x_vals, discLossVals, ":")
+    ax2.set_ylabel("discriminator loss")
+    if useLogscaleList[1]:
+        ax2.set_yscale('log')
     locVal = 0
     if nr_epochs <= 25:
         locVal = 1
@@ -180,10 +186,14 @@ def plotLoss(pLossValueLists, pNameList, pFilename, useLogscale=False):
         locVal = 1000
     ax1.xaxis.set_major_locator(MultipleLocator(locVal))
     ax1.grid(True, which="both")
-    ax1.legend(pNameList, loc='upper right')
+    if len(pGeneratorLossNameList) > 1:
+        ax1.legend(pGeneratorLossNameList, loc='upper right')
+    if len(pDiscLossNameList) > 1:
+        ax2.legend(pDiscLossNameList, loc="lower right")
+    fig1.tight_layout()
     fig1.savefig(pFilename)
     plt.close(fig1)
-    del fig1, ax1
+    del fig1, ax1, ax2
 
 def rebuildMatrix(pArrayOfTriangles, pWindowSize, pFlankingSize=None, pMaxDist=None, pStepsize=1):
     #rebuilds the interaction matrix (a trapezoid along its diagonal)
