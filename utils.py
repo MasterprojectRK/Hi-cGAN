@@ -187,9 +187,9 @@ def plotLoss(pGeneratorLossValueLists, pDiscLossValueLists, pGeneratorLossNameLi
     ax1.xaxis.set_major_locator(MultipleLocator(locVal))
     ax1.grid(True, which="both")
     if len(pGeneratorLossNameList) > 1:
-        ax1.legend(pGeneratorLossNameList, loc='upper right')
+        ax1.legend(pGeneratorLossNameList, loc='upper right', title="Generator")
     if len(pDiscLossNameList) > 1:
-        ax2.legend(pDiscLossNameList, loc="lower right")
+        ax2.legend(pDiscLossNameList, loc="lower right", title="Discriminator")
     fig1.tight_layout()
     fig1.savefig(pFilename)
     plt.close(fig1)
