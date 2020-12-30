@@ -36,7 +36,7 @@ class HiCGAN():
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
 
-        self.generator_intro_model = self.oneD_twoD_conversion()
+        self.generator_intro_model = self.oneD_twoD_conversion(apply_dropout=True)
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
@@ -53,7 +53,7 @@ class HiCGAN():
         self.progress_plot_frequency = plot_frequency
         self.example_plot_frequency = 5
 
-    def oneD_twoD_conversion(self, nr_filters_list=[16,16,32,32,64], kernel_width_list=[4,4,4,4,4], nr_neurons_List=[5000,4000,3000]):  
+    def oneD_twoD_conversion(self, nr_filters_list=[16,16,32,32,64], kernel_width_list=[4,4,4,4,4], apply_dropout: bool = False):  
         inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #add 1D convolutions
         x = inputs
@@ -67,6 +67,8 @@ class HiCGAN():
                 convParamDict["padding"] = "same"
             x = Conv1D(**convParamDict)(x)
             x = BatchNormalization()(x)
+            if apply_dropout:
+                x = Dropout(0.5)(x)
             x = tf.keras.layers.Activation("sigmoid")(x)
         #make the shape of a 2D-image
         x = Conv1D(filters=self.INPUT_SIZE, strides=3, kernel_size=4, data_format="channels_last", activation="sigmoid", padding="same", name="conv1D_final")(x)
