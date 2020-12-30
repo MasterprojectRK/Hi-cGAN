@@ -221,7 +221,7 @@ class HiCGAN():
         real_loss = self.loss_object(tf.ones_like(disc_real_output), disc_real_output)
         generated_loss = self.loss_object(tf.zeros_like(disc_generated_output), disc_generated_output)
         total_disc_loss = real_loss + generated_loss
-        return total_disc_loss
+        return total_disc_loss, real_loss, generated_loss
 
 
     @tf.function
@@ -232,8 +232,8 @@ class HiCGAN():
             disc_real_output = self.discriminator([input_image, target], training=True)
             disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
-            gen_total_loss, gen_gan_loss, gen_l1_loss = self.generator_loss(disc_generated_output, gen_output, target)
-            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
+            gen_total_loss, _, _ = self.generator_loss(disc_generated_output, gen_output, target)
+            disc_loss, disc_real_loss, disc_gen_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
 
         generator_gradients = gen_tape.gradient(gen_total_loss,
                                                 self.generator.trainable_variables)
@@ -245,7 +245,7 @@ class HiCGAN():
         self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
                                                     self.discriminator.trainable_variables))
 
-        return gen_total_loss, disc_loss
+        return gen_total_loss, disc_loss, disc_real_loss, disc_gen_loss
 
     @tf.function
     def validationStep(self, input_image, target, epoch):
@@ -254,8 +254,8 @@ class HiCGAN():
         disc_real_output = self.discriminator([input_image, target], training=True)
         disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
-        gen_total_loss, gen_gan_loss, gen_l1_loss = self.generator_loss(disc_generated_output, gen_output, target)
-        disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
+        gen_total_loss, _, _ = self.generator_loss(disc_generated_output, gen_output, target)
+        disc_loss, _, _ = self.discriminator_loss(disc_real_output, disc_generated_output)
 
         return gen_total_loss, disc_loss
 
@@ -279,6 +279,8 @@ class HiCGAN():
         gen_loss_train = []
         gen_loss_val = []
         disc_loss_train =[]
+        disc_loss_real_train = []
+        disc_loss_gen_train = []
         disc_loss_val = []
         for epoch in range(epochs):
             #generate sample output
@@ -290,10 +292,14 @@ class HiCGAN():
             train_pbar.set_description("Epoch {:05d}".format(epoch+1))
             gen_loss_batches = []
             disc_loss_batches = []
+            disc_real_loss_batches = []
+            disc_gen_loss_batches = []
             for _, (input_image, target) in train_pbar:
-                gen_loss, disc_loss = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
+                gen_loss, disc_loss, disc_real_loss, disc_gen_loss = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
                 gen_loss_batches.append(gen_loss)
                 disc_loss_batches.append(disc_loss)
+                disc_real_loss_batches.append(disc_real_loss)
+                disc_gen_loss_batches.append(disc_gen_loss)
                 if epoch == 0:
                     train_pbar.set_postfix( {"loss": "{:.4f}".format(gen_loss)} )
                 else:
@@ -301,7 +307,9 @@ class HiCGAN():
                                              "val loss": "{:.4f}".format(gen_loss_val[-1])} )
             gen_loss_train.append(np.mean(gen_loss_batches))
             disc_loss_train.append(np.mean(disc_loss_batches))
-            del gen_loss_batches, disc_loss_batches
+            disc_loss_real_train.append(np.mean(disc_real_loss_batches))
+            disc_loss_gen_train.append(np.mean(disc_gen_loss_batches))
+            del gen_loss_batches, disc_loss_batches, disc_real_loss_batches, disc_gen_loss_batches
             # Validation
             gen_loss_batches = []
             disc_loss_batches = []
@@ -318,9 +326,9 @@ class HiCGAN():
                 #self.checkpoint.save(file_prefix = self.checkpoint_prefix)
                 #plot loss
                 utils.plotLoss(pGeneratorLossValueLists=[gen_loss_train, gen_loss_val],
-                              pDiscLossValueLists=[disc_loss_train, disc_loss_val],
+                              pDiscLossValueLists=[disc_loss_train, disc_loss_real_train, disc_loss_gen_train, disc_loss_val],
                               pGeneratorLossNameList=["training", "validation"],
-                              pDiscLossNameList=["training", "validation"],
+                              pDiscLossNameList=["train total", "train real", "train gen.", "valid. total"],
                               pFilename=self.progress_plot_name,
                               useLogscaleList=[True, False])
                 np.savez(os.path.join(self.log_dir, "lossValues_{:05d}.npz".format(epoch)), 
@@ -334,9 +342,9 @@ class HiCGAN():
 
         self.checkpoint.save(file_prefix = self.checkpoint_prefix)
         utils.plotLoss(pGeneratorLossValueLists=[gen_loss_train, gen_loss_val],
-                       pDiscLossValueLists=[disc_loss_train, disc_loss_val],
+                       pDiscLossValueLists=[disc_loss_train, disc_loss_real_train, disc_loss_gen_train, disc_loss_val],
                        pGeneratorLossNameList=["training", "validation"],
-                       pDiscLossNameList=["training", "validation"],
+                       pDiscLossNameList=["train total", "train real", "train gen.", "valid. total"],
                        pFilename=self.progress_plot_name,
                        useLogscaleList=[True, False])
         np.savez(os.path.join(self.log_dir, "lossValues_{:05d}.npz".format(epoch)), 
