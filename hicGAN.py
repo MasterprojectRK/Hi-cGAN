@@ -410,6 +410,90 @@ class HiCGAN():
         self.generator_intro_model = introModel_gen
         self.generator = self.Generator()    
 
+
+class ImproveGAN(HiCGAN):
+    def __init__(self, log_dir):
+        super().__init__(log_dir=log_dir, 
+                         input_size=256, 
+                         lambda_disc=0.5, 
+                         lambda_pixel=100,
+                         learning_rate=2e-5,
+                         loss_type_pixel="L1",
+                         tv_weight=1e-12,
+                         adam_beta_1=0.5)
+
+
+    def Generator(self):
+        inputs = tf.keras.layers.Input(shape = [self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS], name="factorData")
+
+        #the downsampling part of the network, defined for 256x256 images
+        down_stack = [
+            HiCGAN.downsample(64, 4, apply_batchnorm=False), # (bs, 128, 128, 64)
+            HiCGAN.downsample(128, 4), # (bs, 64, 64, 128)
+            HiCGAN.downsample(256, 4), # (bs, 32, 32, 256)
+            HiCGAN.downsample(512, 4), # (bs, 16, 16, 512)
+            HiCGAN.downsample(512, 4), # (bs, 8, 8, 512)
+            HiCGAN.downsample(512, 4), # (bs, 4, 4, 512)
+            HiCGAN.downsample(512, 4), # (bs, 2, 2, 512)
+            HiCGAN.downsample(512, 4, apply_batchnorm=False), # (bs, 1, 1, 512)
+        ]
+       
+        #the upsampling portion of the generator, designed for 256x256 images
+        up_stack = [
+            HiCGAN.upsample(512, 4, apply_dropout=True), # (bs, 2, 2, 1024)
+            HiCGAN.upsample(512, 4, apply_dropout=True), # (bs, 4, 4, 1024)
+            HiCGAN.upsample(512, 4, apply_dropout=True), # (bs, 8, 8, 1024)
+            HiCGAN.upsample(512, 4), # (bs, 16, 16, 1024)
+            HiCGAN.upsample(256, 4), # (bs, 32, 32, 512)
+            HiCGAN.upsample(128, 4), # (bs, 64, 64, 256)
+            HiCGAN.upsample(64, 4), # (bs, 128, 128, 128)
+        ]
+        
+        initializer = tf.random_normal_initializer(0., 0.02)
+        last = tf.keras.layers.Conv2DTranspose(self.OUTPUT_CHANNELS, 4,
+                                                strides=2,
+                                                padding='same',
+                                                kernel_initializer=initializer,
+                                                activation='tanh') # (bs, 256, 256, 3)
+
+        x = inputs
+
+        # Downsampling through the model
+        skips = []
+        for down in down_stack:
+            x = down(x)
+            skips.append(x)
+
+        skips = reversed(skips[:-1])
+
+        # Upsampling and establishing the skip connections
+        for up, skip in zip(up_stack, skips):
+            x = up(x)
+            x = tf.keras.layers.Concatenate()([x, skip])
+        x = last(x)
+        
+        return tf.keras.Model(inputs=inputs, outputs=x)
+
+    def Discriminator(self):
+        initializer = tf.random_normal_initializer(0., 0.02)
+
+        inp = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS], name='input_image')
+        tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
+        
+        d = inp
+        d = tf.keras.layers.Concatenate()([d, tar])
+        d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
+        d = HiCGAN.downsample(128, 4)(d)# (bs, inp.size/4, inp.size/4, 128)
+        d = HiCGAN.downsample(256, 4)(d) # (bs, inp.size/8, inp.size/8, 256)
+        d = Conv2D(512, 4, strides=1, padding="same", kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 512)
+        d = BatchNormalization()(d)
+        d = LeakyReLU(alpha=0.2)(d)
+        d = Conv2D(1, 4, strides=1, padding="same",
+                        kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 1)
+        d = tf.keras.layers.Activation("sigmoid")(d)
+        return tf.keras.Model(inputs=[inp, tar], outputs=d)
+
+
 class CustomReshapeLayer(tf.keras.layers.Layer):
     '''
     reshape a 1D tensor such that it represents 

@@ -210,10 +210,7 @@ class DataContainer():
         Write a dataset to disk in tensorflow TFRecord format
         
         Parameters:
-            pWindowsize (int): size of submatrices
             pOutfolder (str): directory where TFRecords will be written
-            pFlankingsize (int): size of flanking regions left/right of submatrices
-            pMaxdist (int): cut the matrices off at this distance (in bins)
             pRecordsize (int): split the TFRecords into multiple files containing approximately this number of samples
         
         Returns:
@@ -396,3 +393,140 @@ class DataContainer():
                 recordDict[key] = np.array(featData)
                 storedFeaturesDict[key] = {"shape": recordDict[key].shape[1:], "dtype": tfdtypes.as_dtype(recordDict[key].dtype)}
         return recordDict, storedFeaturesDict
+
+
+class ImprovementDataContainer():
+    def __init__(self, chromosome: str, trainmatrix_filepath: str, targetmatrix_filepath: str):
+        self.chromosome = chromosome
+        self.trainmatrix_filepath = trainmatrix_filepath
+        self.targetmatrix_filepath = targetmatrix_filepath
+        self.windowsize = 256
+        self.sparse_trainmatrix = None
+        self.sparse_targetmatrix = None
+        self.chromsize_train = 0
+        self.chromsize_target = 0
+        self.binsize_train = 0
+        self.binsize_target = 0
+        self.data_loaded = False
+
+    def __loadMatrixData(self, targetStr):
+        #load Hi-C matrix from cooler file
+        if targetStr == "train":
+            matrixfilepath = self.trainmatrix_filepath
+            sparseHiCMatrix = [self.sparse_trainmatrix]
+            chromsize = [self.chromsize_train]
+            binsize = [self.binsize_train]
+        else:
+            matrixfilepath = self.targetmatrix_filepath
+            sparseHiCMatrix = [self.sparse_targetmatrix]
+            chromsize = [self.chromsize_target]
+            binsize = [self.binsize_target]
+        try:
+            prefixDict_matrix = {matrixfilepath: utils.getChromPrefixCooler(matrixfilepath)}
+            chromname = prefixDict_matrix[matrixfilepath] + self.chromosome
+            chromsize[0] = utils.getChromSizesFromCooler(matrixfilepath)[chromname]
+            sparseHiCMatrix[0], binsize[0] = utils.getMatrixFromCooler(matrixfilepath, chromname)
+        except:
+            msg = "Error: Could not load data from Hi-C matrix {:s}"
+            msg = msg.format(matrixfilepath)
+            raise IOError(msg)
+        #scale to 0..1
+        sparseHiCMatrix[0] = utils.scaleArray(sparseHiCMatrix[0])       
+            
+        msg = "Loaded cooler matrix {:s}\n".format(matrixfilepath)
+        msg += "chr. {:s}, matshape {:d}*{:d} -- min. {:d} -- max. {:d} -- nnz. {:d}"
+        msg = msg.format(self.chromosome, sparseHiCMatrix[0].shape[0], sparseHiCMatrix[0].shape[1], int(sparseHiCMatrix[0].min()), int(sparseHiCMatrix[0].max()), sparseHiCMatrix[0].getnnz() )
+        print(msg)
+
+    def __checkOk(self):
+        binsizeOk = (self.binsize_train == self.binsize_target)
+        chromsizeOk = (self.chromsize_train == self.chromsize_target)
+        return (binsizeOk and chromsizeOk)
+
+    def loadData(self):
+        self.__loadMatrixData("train")
+        self.__loadMatrixData("target")
+        self.__checkOk()
+        self.data_loaded = True
+    
+    def getSampleData(self, idx):
+        if not self.data_loaded:
+            return None
+        trainmatrix = self.__getMatrixData(idx, self.sparse_trainmatrix)
+        targetmatrix = self.__getMatrixData(idx, self.sparse_targetmatrix)
+
+        return {"factorData": trainmatrix, 
+                "out_matrixData": targetmatrix}
+        
+    def getNumberSamples(self):
+        if not self.data_loaded:
+            return 0
+        fullsize = self.sparse_targetmatrix.shape[0]
+        available_size = fullsize - 2* self.windowsize
+        nr_samples = available_size - self.windowsize + 1
+        if nr_samples <= 0:
+            msg = "Matrix is too small for given windowsize"
+            raise ValueError(msg)
+        return nr_samples 
+
+    def __getMatrixData(self, idx, matrixObj: csr_matrix):
+        startInd = idx + self.windowsize
+        stopInd = startInd + self.windowsize
+        trainmatrix = matrixObj[startInd:stopInd,startInd:stopInd].todense()
+        trainmatrix = np.array(np.nan_to_num(trainmatrix))
+        trainmatrix = np.expand_dims(trainmatrix, axis=-1).astype("float32") #make Hi-C (sub-)matrix an RGB image
+        return trainmatrix
+
+    def __prepareWriteoutDict(self, first_index, last_index):
+        if not self.data_loaded:
+            msg = "Error: no data loaded, nothing to prepare"
+            raise RuntimeError(msg)
+        data = [ self.getSampleData(idx=i) for i in range(first_index, last_index) ]
+        recordDict = dict()
+        storedFeaturesDict = dict()
+        if len(data) < 1:
+            msg = "Error: No data to write"
+            raise RuntimeError(msg)
+        for key in data[0]:
+            featData = [feature[key] for feature in data]
+            if not any(elem is None for elem in featData):
+                recordDict[key] = np.array(featData)
+                storedFeaturesDict[key] = {"shape": recordDict[key].shape[1:], "dtype": tfdtypes.as_dtype(recordDict[key].dtype)}
+        return recordDict, storedFeaturesDict
+    
+    def writeTFRecord(self, pOutfolder, pRecordSize=None):
+        '''
+        Write a dataset to disk in tensorflow TFRecord format
+        
+        Parameters:
+            pOutfolder (str): directory where TFRecords will be written
+            pRecordsize (int): split the TFRecords into multiple files containing approximately this number of samples
+        
+        Returns:
+            list of filenames written
+        '''
+
+        if not self.data_loaded:
+            msg = "Warning: No data loaded, nothing to write"
+            print(msg)
+            return None
+        nr_samples = self.getNumberSamples()
+        #adjust record size (yields smaller files and reduces memory load)
+        recordsize = nr_samples
+        if pRecordSize is not None and pRecordSize < recordsize:
+            recordsize = pRecordSize
+        #compute number of record files, number of samples 
+        #in each file and corresponding indices
+        nr_files = int( np.ceil(nr_samples/recordsize) )
+        target_ct = int( np.floor(nr_samples/nr_files) )
+        samples_per_file = [target_ct]*(nr_files-1) + [nr_samples-(nr_files-1)*target_ct]
+        sample_indices = [sum(samples_per_file[0:i]) for i in range(len(samples_per_file)+1)] 
+        #write the single files
+        recordfiles = [os.path.join(pOutfolder, "{:s}_{:s}_{:03d}.tfrecord".format("test", str(self.chromosome), i + 1)) for i in range(nr_files)]
+        for recordfile, firstIndex, lastIndex in tqdm(zip(recordfiles, sample_indices, sample_indices[1:]), desc="Storing TFRecord files", total=len(recordfiles)):
+            recordDict, storedFeaturesDict = self.__prepareWriteoutDict(first_index=firstIndex, 
+                                                                        last_index=lastIndex)
+            records.writeTFRecord(pFilename=recordfile, pRecordDict=recordDict)
+        self.storedFiles = recordfiles
+        self.storedFeatures = storedFeaturesDict
+        return recordfiles
