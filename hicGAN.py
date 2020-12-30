@@ -168,7 +168,8 @@ class HiCGAN():
 
         x = last(x)
         x_T = tf.keras.layers.Permute((2,1,3))(x)
-        x = tf.keras.layers.Add()([x, x_T])
+        diag = tf.keras.layers.Lambda(lambda z: -1. * tf.linalg.band_part(z, 0, 0), name="negDiag")(x)
+        x = tf.keras.layers.Add()([x, x_T, diag])
 
         return tf.keras.Model(inputs=inputs, outputs=x)
 
