@@ -408,6 +408,8 @@ class ImprovementDataContainer():
         self.binsize_train = 0
         self.binsize_target = 0
         self.data_loaded = False
+        self.storedFeatures = None
+        self.storedFiles = None
 
     def __loadMatrixData(self, targetStr):
         #load Hi-C matrix from cooler file
