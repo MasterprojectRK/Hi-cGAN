@@ -36,7 +36,7 @@ class HiCGAN():
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
 
-        self.generator_intro_model = self.oneD_twoD_conversion(apply_dropout=True)
+        self.generator_intro_model = self.oneD_twoD_conversion(nr_filters_list=[1024,512,256,128,64], apply_dropout=True)
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
