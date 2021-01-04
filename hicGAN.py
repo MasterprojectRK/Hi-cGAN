@@ -36,7 +36,7 @@ class HiCGAN():
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
 
-        self.generator_intro_model = self.oneD_twoD_conversion(nr_filters_list=[1024,512,256,128,64], apply_dropout=False)
+        self.generator_intro_model = self.oneD_twoD_conversion()
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
@@ -53,7 +53,7 @@ class HiCGAN():
         self.progress_plot_frequency = plot_frequency
         self.example_plot_frequency = 5
 
-    def oneD_twoD_conversion(self, nr_filters_list=[16,16,32,32,64], kernel_width_list=[4,4,4,4,4], apply_dropout: bool = False):  
+    def oneD_twoD_conversion(self, nr_filters_list=[1024,512,512,256,256,128,128,64], kernel_width_list=[4,4,4,4,4,4,4,4], apply_dropout: bool = False):  
         inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #add 1D convolutions
         x = inputs
@@ -69,13 +69,19 @@ class HiCGAN():
             x = BatchNormalization()(x)
             if apply_dropout:
                 x = Dropout(0.5)(x)
-            x = tf.keras.layers.Activation("sigmoid")(x)
-        #make the shape of a 2D-image
-        x = Conv1D(filters=self.INPUT_SIZE, strides=3, kernel_size=4, data_format="channels_last", activation="sigmoid", padding="same", name="conv1D_final")(x)
-        y = tf.keras.layers.Permute((2,1))(x)
-        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
+            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+        #make the shape of a square matrix
+        x = Conv1D(filters=self.INPUT_SIZE, 
+                    strides=3, 
+                    kernel_size=4, 
+                    data_format="channels_last", 
+                    activation="sigmoid", 
+                    padding="same", name="conv1D_final")(x)
+        #ensure the matrix is symmetric, i.e. x = transpose(x)
+        y = tf.keras.layers.Permute((2,1))(x) #this is the matrix transpose
+        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x) # this is the neg. diagonal
         x = tf.keras.layers.Add()([x, y, diag])
-
+        #reshape the matrix into a 2D grayscale image
         x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
         model = tf.keras.Model(inputs=inputs, outputs=x, name="crazy_intro_model")
         #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
@@ -150,7 +156,7 @@ class HiCGAN():
                                                 strides=2,
                                                 padding='same',
                                                 kernel_initializer=initializer,
-                                                activation='sigmoid') # (bs, 256, 256, 3)
+                                                activation='tanh') # (bs, 256, 256, 3)
 
         x = inputs
         x = twoD_conversion(x)
