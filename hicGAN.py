@@ -78,9 +78,9 @@ class HiCGAN():
                     activation="sigmoid", 
                     padding="same", name="conv1D_final")(x)
         #ensure the matrix is symmetric, i.e. x = transpose(x)
-        y = tf.keras.layers.Permute((2,1))(x) #this is the matrix transpose
-        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x) # this is the neg. diagonal
-        x = tf.keras.layers.Add()([x, y, diag])
+        x_T = tf.keras.layers.Permute((2,1))(x) #this is the matrix transpose
+        x = tf.keras.layers.Add()([x, x_T])
+        x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x) #add transpose and divide by 2
         #reshape the matrix into a 2D grayscale image
         x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
         model = tf.keras.Model(inputs=inputs, outputs=x, name="crazy_intro_model")
@@ -175,9 +175,10 @@ class HiCGAN():
             x = tf.keras.layers.Concatenate()([x, skip])
 
         x = last(x)
+        #enforce symmetry
         x_T = tf.keras.layers.Permute((2,1,3))(x)
-        diag = tf.keras.layers.Lambda(lambda z: -1. * tf.linalg.band_part(z, 0, 0), name="negDiag")(x)
-        x = tf.keras.layers.Add()([x, x_T, diag])
+        x = tf.keras.layers.Add()([x, x_T])
+        x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x)
 
         return tf.keras.Model(inputs=inputs, outputs=x)
 
