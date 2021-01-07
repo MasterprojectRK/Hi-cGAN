@@ -155,8 +155,7 @@ class HiCGAN():
         last = tf.keras.layers.Conv2DTranspose(self.OUTPUT_CHANNELS, 4,
                                                 strides=2,
                                                 padding='same',
-                                                kernel_initializer=initializer,
-                                                activation='tanh') # (bs, 256, 256, 3)
+                                                kernel_initializer=initializer) # (bs, 256, 256, 3)
 
         x = inputs
         x = twoD_conversion(x)
@@ -179,6 +178,7 @@ class HiCGAN():
         x_T = tf.keras.layers.Permute((2,1,3))(x)
         x = tf.keras.layers.Add()([x, x_T])
         x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x)
+        x = tf.keras.layers.Activation("tanh")(x)
 
         return tf.keras.Model(inputs=inputs, outputs=x)
 
@@ -214,16 +214,38 @@ class HiCGAN():
         d = twoD_conversion(inp)
         d = tf.keras.layers.Concatenate()([d, tar])
         if self.INPUT_SIZE > 64:
+            #downsample and symmetrize 1 
             d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
+            d_T = tf.keras.layers.Permute((2,1,3))(d)
+            d = tf.keras.layers.Add()([d, d_T])
+            d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
+            #downsample and symmetrize 2
             d = HiCGAN.downsample(128, 4)(d)# (bs, inp.size/4, inp.size/4, 128)
+            d_T = tf.keras.layers.Permute((2,1,3))(d)
+            d = tf.keras.layers.Add()([d, d_T])
+            d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         else:    
+            #downsample and symmetrize 3
             d = HiCGAN.downsample(256, 4)(d)
+            d_T = tf.keras.layers.Permute((2,1,3))(d)
+            d = tf.keras.layers.Add()([d, d_T])
+            d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
+        #downsample and symmetrize 4
         d = HiCGAN.downsample(256, 4)(d) # (bs, inp.size/8, inp.size/8, 256)
+        d_T = tf.keras.layers.Permute((2,1,3))(d)
+        d = tf.keras.layers.Add()([d, d_T])
+        d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = Conv2D(512, 4, strides=1, padding="same", kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 512)
+        d_T = tf.keras.layers.Permute((2,1,3))(d)
+        d = tf.keras.layers.Add()([d, d_T])
+        d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = BatchNormalization()(d)
         d = LeakyReLU(alpha=0.2)(d)
         d = Conv2D(1, 4, strides=1, padding="same",
                         kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 1)
+        d_T = tf.keras.layers.Permute((2,1,3))(d)
+        d = tf.keras.layers.Add()([d, d_T])
+        d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = tf.keras.layers.Activation("sigmoid")(d)
         return tf.keras.Model(inputs=[inp, tar], outputs=d)
 
