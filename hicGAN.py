@@ -63,6 +63,7 @@ class HiCGAN():
             convParamDict["filters"] = nr_filters
             convParamDict["kernel_size"] = kernelWidth
             convParamDict["data_format"]="channels_last"
+            convParamDict["kernel_regularizer"]=tf.keras.regularizers.l2(0.01)
             if kernelWidth > 1:
                 convParamDict["padding"] = "same"
             x = Conv1D(**convParamDict)(x)
