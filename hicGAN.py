@@ -179,7 +179,7 @@ class HiCGAN():
         x_T = tf.keras.layers.Permute((2,1,3))(x)
         x = tf.keras.layers.Add()([x, x_T])
         x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x)
-        x = tf.keras.layers.Activation("tanh")(x)
+        x = tf.keras.layers.Activation("sigmoid")(x)
 
         return tf.keras.Model(inputs=inputs, outputs=x)
 
