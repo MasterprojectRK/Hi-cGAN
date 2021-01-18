@@ -9,7 +9,7 @@ from tqdm import tqdm
 import pandas as pd
 
 class DataContainer():
-    def __init__(self, chromosome, matrixfilepath, chromatinFolder, binsize=None):
+    def __init__(self, chromosome, matrixfilepath, chromatinFolder, zero_boundaries: bool = True, binsize=None):
         self.chromosome = str(chromosome)
         self.matrixfilepath = matrixfilepath
         self.chromatinFolder = chromatinFolder
@@ -32,6 +32,7 @@ class DataContainer():
         self.flankingsize = None
         self.maxdist = None
         self.data_loaded = False
+        self.zero_boundaries = zero_boundaries
 
     def __loadFactorData(self, ignoreChromLengths=False, scaleFeatures=False, clampFeatures=False):
         #load chromatin factor data from bigwig files
@@ -105,6 +106,9 @@ class DataContainer():
             msg2 = msg2.format(bigwigFile, tmpArray.min(), tmpArray.max(), nr_nonzero_abs, nr_nonzero_perc)
             featLoadedMsgList.append(msg2)
         self.FactorDataArray = np.transpose(self.FactorDataArray)
+        if self.zero_boundaries:
+            zero_fill_arr = np.zeros((self.flankingsize, self.FactorDataArray.shape[1]))
+            self.FactorDataArray = np.vstack((zero_fill_arr, self.FactorDataArray, zero_fill_arr))
         print(msg + "\n".join(featLoadedMsgList))
             
     def __loadMatrixData(self, scaleMatrix=False):
@@ -167,11 +171,13 @@ class DataContainer():
             raise TypeError(msg)
         if isinstance(maxdist, int):
             maxdist = np.clip(maxdist, a_min=1, a_max=self.windowsize)
-        self.__loadMatrixData(scaleMatrix=scaleTargets)
-        self.__loadFactorData(scaleFeatures=scaleFeatures, clampFeatures=clampFeatures)
         self.windowsize = windowsize
         self.flankingsize = flankingsize
         self.maxdist = maxdist
+        if self.flankingsize is None:
+            self.flankingsize = self.windowsize
+        self.__loadMatrixData(scaleMatrix=scaleTargets)
+        self.__loadFactorData(scaleFeatures=scaleFeatures, clampFeatures=clampFeatures)
         self.data_loaded = True
 
     def checkCompatibility(self, containerIterable):
@@ -251,7 +257,10 @@ class DataContainer():
         if not self.data_loaded:
             return None
         featureArrays = [self.FactorDataArray, self.sparseHiCMatrix, self.sequenceArray]
-        cutouts = [self.windowsize+2*self.flankingsize, self.windowsize+2*self.flankingsize, (self.windowsize+2*self.flankingsize)*self.binsize]
+        if self.zero_boundaries:
+            cutouts = [self.windowsize+2*self.flankingsize, self.windowsize, (self.windowsize+2*self.flankingsize)*self.binsize]
+        else:
+            cutouts = [self.windowsize+2*self.flankingsize, self.windowsize+2*self.flankingsize, (self.windowsize+2*self.flankingsize)*self.binsize]
         nr_samples_list = []
         for featureArray, cutout in zip(featureArrays, cutouts):
             if featureArray is not None:
@@ -276,7 +285,12 @@ class DataContainer():
         if flankingsize is None:
             flankingsize = windowsize
             self.flankingsize = windowsize
-        startInd = idx + flankingsize
+        if self.zero_boundaries: 
+            #the chrom. features are zero padded, first matrix = first index
+            startInd = idx
+        else:
+            #the chrom. features are not padded, first matrix = flankingsize away from first index
+            startInd = idx + flankingsize
         stopInd = startInd + windowsize
         trainmatrix = self.sparseHiCMatrix[startInd:stopInd,startInd:stopInd].todense()
         trainmatrix = np.array(np.nan_to_num(trainmatrix))

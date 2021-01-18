@@ -94,7 +94,7 @@ def prediction(trainedmodel,
         triu_indices = np.triu_indices(windowsize)
         predArray = np.array( [np.array(x[triu_indices]) for x in predArray] )
         predList.append(predArray)
-    predList = [utils.rebuildMatrix(pArrayOfTriangles=x, pWindowSize=windowsize, pFlankingSize=windowsize) for x in predList]
+    predList = [utils.rebuildMatrix(pArrayOfTriangles=x, pWindowSize=windowsize, pFlankingSize=0) for x in predList]
     predList = [utils.scaleArray(x) * multiplier for x in predList]
 
     matrixname = os.path.join(outfolder, "predMatrix.cool")
