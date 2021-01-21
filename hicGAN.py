@@ -214,9 +214,16 @@ class HiCGAN():
         #Patch-GAN (Isola et al.)
         d = twoD_conversion(inp)
         d = tf.keras.layers.Concatenate()([d, tar])
+        d1 = HiCGAN.downsample(128,4,False)(d)
+        d2 = HiCGAN.downsample(256,4,False)(d1)
+        d = HiCGAN.downsample(512,4,False)(d2)
+        d = HiCGAN.upsample(256,4,False)(d)
+        d = tf.keras.layers.Concatenate()([d,d2])
+        d = HiCGAN.upsample(128,4,False)(d)
+        d = tf.keras.layers.Concatenate()([d,d1])
         if self.INPUT_SIZE > 64:
             #downsample and symmetrize 1 
-            d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
+            #d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
             d_T = tf.keras.layers.Permute((2,1,3))(d)
             d = tf.keras.layers.Add()([d, d_T])
             d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
@@ -227,7 +234,7 @@ class HiCGAN():
             d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         else:    
             #downsample and symmetrize 3
-            d = HiCGAN.downsample(256, 4)(d)
+            #d = HiCGAN.downsample(256, 4)(d)
             d_T = tf.keras.layers.Permute((2,1,3))(d)
             d = tf.keras.layers.Add()([d, d_T])
             d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
