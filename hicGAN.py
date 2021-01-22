@@ -242,11 +242,14 @@ class HiCGAN():
         d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = BatchNormalization()(d)
         d = LeakyReLU(alpha=0.2)(d)
-        d = Conv2D(1, 4, strides=1, padding="same",
-                        kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 1)
+        #d = Conv2D(1, 4, strides=1, padding="same",
+        #                kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 1)
         d_T = tf.keras.layers.Permute((2,1,3))(d)
         d = tf.keras.layers.Add()([d, d_T])
         d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
+        d = Flatten()(d)
+        d = Dropout(0.4)(d)
+        d = Dense(1)(d)
         d = tf.keras.layers.Activation("sigmoid")(d)
         return tf.keras.Model(inputs=[inp, tar], outputs=d)
 
