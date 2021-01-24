@@ -36,21 +36,48 @@ import records
 @click.option("--epochs", "-ep", required=True,
               type=click.IntRange(min=1), 
               default=2, show_default=True)
+@click.option("--batchsize", "-bs", required=True,
+              type=click.IntRange(min=1, max=256), 
+              default=32, show_default=True, 
+              help="Batch size for training, choose integer in [1, 256]")
 @click.option("--lossWeightPixel", "-lwp", required=False,
               type=click.FloatRange(min=1e-10), 
-              default=10000., show_default=True, 
+              default=100.0, show_default=True, 
               help="loss weight for L1/L2 error of generator")
+@click.option("--lossWeightDisc", "-lwd", required=False,
+              type=click.FloatRange(min=1e-10),
+              default=0.5, show_default=True,
+              help="loss weight for the discriminator error")
 @click.option("--lossTypePixel", "-ltp", required=False,
              type=click.Choice(["L1", "L2"]), 
              default="L2", show_default=True,
-             help="Type of loss to use per-pixel")
+             help="Type of per-pixel loss to use for the generator; choose from L1 (mean abs. error) or L2 (mean squared error)")
 @click.option("--lossWeightTv", "-lvt", required=False,
              type=click.FloatRange(min=0.0),
              default=1e-10, show_default=True,
-             help="loss weight for TV loss of generator")
+             help="loss weight for Total-Variation-loss of generator; higher value - more smoothing")
+@click.option("--learningRate", "-lr", required=False,
+              type=click.FloatRange(min=1e-10, max=1.0), 
+              default=2e-5, show_default=True,
+              help="learning rate for Adam optimizer")
+@click.option("--beta1", "-b1", required=False,
+              type=click.FloatRange(min=1e-2, max=1.0),
+              default=0.5, show_default=True,
+              help="beta1 parameter for Adam optimizer")
+@click.option("--flipsamples", "-fs", required=False,
+             type=bool, default=False, show_default=True,
+             help="Flip training matrices and chromatin features (data augmentation)")
 @click.option("--pretrainedIntroModel", "-ptm", required=False,
              type=click.Path(exists=True, dir_okay=False, readable=True),
              help="pretrained model for 1D-2D conversion of inputs")
+@click.option("--figuretype", "-ft", required=False,
+             type=click.Choice(["png", "pdf", "svg"]), 
+             default="png", show_default=True,
+             help="Figure type for all plots")
+@click.option("--recordsize", "-rs", required=False,
+             type=click.IntRange(min=10), 
+             default=2000, show_default=True,
+             help="Approx. size (number of samples) of the tfRecords used in the data pipeline for training. Lower values = less memory consumption, but maybe longer runtime")
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -61,20 +88,22 @@ def training(trainmatrices,
              windowsize,
              outfolder,
              epochs,
+             batchsize,
              lossweightpixel,
+             lossweightdisc,
              losstypepixel,
              lossweighttv,
-             pretrainedintromodel):
-    
-    paramDict = locals().copy()
+             learningrate,
+             beta1,
+             flipsamples,
+             pretrainedintromodel,
+             figuretype,
+             recordsize):
 
     #few constants
     windowsize = int(windowsize)
-    recordsize = 2000
     debugstate = None
-    figuretype = "png"
-    EPOCHS = epochs
-    batchsize = 32
+    paramDict = locals().copy()
 
     #remove spaces, commas and "chr" from the train and val chromosome lists
     #ensure each chrom name is used only once, but allow the same chrom for train and validation
@@ -185,8 +214,11 @@ def training(trainmatrices,
                                         num_parallel_reads=tf.data.experimental.AUTOTUNE,
                                         compression_type="GZIP")
     trainDs = trainDs.map(lambda x: records.parse_function(x, storedFeaturesDict), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    if flipsamples:
+        flippedDs = trainDs.map(lambda a,b: records.mirror_function(a["factorData"], b["out_matrixData"]))
+        trainDs = trainDs.concatenate(flippedDs)
     trainDs = trainDs.shuffle(buffer_size=shuffleBufferSize, reshuffle_each_iteration=True)
-    trainDs = trainDs.batch(batchsize, drop_remainder=False)
+    trainDs = trainDs.batch(batchsize, drop_remainder=True)
     trainDs = trainDs.prefetch(tf.data.experimental.AUTOTUNE)
     #build the input streams for validation
     validationDs = tf.data.TFRecordDataset(valdataRecords, 
@@ -196,11 +228,25 @@ def training(trainmatrices,
     validationDs = validationDs.batch(batchsize)
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     
-    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, lambda_pixel=lossweightpixel, loss_type_pixel=losstypepixel, tv_weight=lossweighttv, input_size=windowsize)
+    steps_per_epoch = int( np.floor(nr_trainingSamples / batchsize) )
+    if flipsamples:
+        steps_per_epoch *= 2
+    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, 
+                                lambda_pixel=lossweightpixel,
+                                lambda_disc=lossweightdisc, 
+                                loss_type_pixel=losstypepixel, 
+                                tv_weight=lossweighttv, 
+                                input_size=windowsize,
+                                learning_rate=learningrate,
+                                adam_beta_1=beta1)
     if pretrainedintromodel is not None:
         hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
-    hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
+    hicGanModel.fit(train_ds=trainDs, epochs=epochs, test_ds=validationDs, steps_per_epoch=steps_per_epoch)
+
+    for tfRecordfile in traindataRecords + valdataRecords:
+        if os.path.exists(tfRecordfile):
+            os.remove(tfRecordfile)
 
 if __name__ == "__main__":
     training() #pylint: disable=no-value-for-parameter

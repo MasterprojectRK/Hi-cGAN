@@ -1,6 +1,7 @@
 import click
 import numpy as np
 import os
+import csv
 import tensorflow as tf
 import dataContainer
 import records
@@ -20,11 +21,15 @@ import utils
               type=click.Path(exists=True, writable=True),
               default="./", show_default=True,
               help="Output path for predicted coolers")
+@click.option("--multiplier", "-mul", required=False,
+             type=click.IntRange(min=1), 
+             default=10, show_default=True)
 @click.command()
 def prediction(trainedmodel, 
                 testchrompath,
                 testchroms,
-                outfolder
+                outfolder,
+                multiplier
                 ):
     binSizeInt = 25000
     scalefactors = True
@@ -34,9 +39,9 @@ def prediction(trainedmodel,
     flankingsize = windowsize
     maxdist = None
     batchSizeInt = 32
-    multiplier = 10
 
-    
+    paramDict = locals().copy()
+        
     #extract chromosome names from the input
     chromNameList = testchroms.replace(",", " ").rstrip().split(" ")  
     chromNameList = sorted([x.lstrip("chr") for x in chromNameList])
@@ -98,6 +103,15 @@ def prediction(trainedmodel,
                       pOutfile=matrixname, 
                       pChromosomeList=chromNameList)
 
+    parameterFile = os.path.join(outfolder, "predParams.csv")    
+    with open(parameterFile, "w") as csvfile:
+        dictWriter = csv.DictWriter(csvfile, fieldnames=sorted(list(paramDict.keys())))
+        dictWriter.writeheader()
+        dictWriter.writerow(paramDict)
+    
+    for tfrecordfile in tfRecordFilenames:
+        if os.path.exists(tfrecordfile):
+            os.remove(tfrecordfile)
 
 if __name__ == "__main__":
     prediction() #pylint: disable=no-value-for-parameter

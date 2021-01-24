@@ -12,10 +12,14 @@ import utils
 
 class HiCGAN():
     def __init__(self, log_dir: str, 
-                    lambda_pixel: float = 1e-5, 
-                    loss_type_pixel: str = "L2",
+                    lambda_pixel: float = 100,
+                    lambda_disc: float = 0.5, 
+                    loss_type_pixel: str = "L1",
                     tv_weight: float = 1e-10,
-                    input_size: int = 256): 
+                    input_size: int = 256,
+                    plot_frequency: int = 20,
+                    learning_rate: float = 2e-5,
+                    adam_beta_1: float = 0.5): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
@@ -24,15 +28,15 @@ class HiCGAN():
         if input_size in [64,128,256]:
             self.INPUT_SIZE = input_size
         self.NR_FACTORS = 14
-        self.LAMBDA = lambda_pixel
+        self.lambda_pixel = lambda_pixel
+        self.lambda_disc = lambda_disc
         self.tv_loss_Weight = tv_weight
         self.loss_type_pixel = loss_type_pixel
         self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        self.generator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
-        self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-5, beta_1=0.5)
+        self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
+        self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
 
         self.generator_intro_model = self.oneD_twoD_conversion()
-        self.discriminator_intro_model = self.oneD_twoD_conversion()
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
@@ -46,8 +50,10 @@ class HiCGAN():
                                     discriminator=self.discriminator)
 
         self.progress_plot_name = os.path.join(self.log_dir, "lossOverEpochs.png")
+        self.progress_plot_frequency = plot_frequency
+        self.example_plot_frequency = 5
 
-    def oneD_twoD_conversion(self, nr_filters_list=[16,16,32,32,64], kernel_width_list=[4,4,4,4,4], nr_neurons_List=[5000,4000,3000]):  
+    def oneD_twoD_conversion(self, nr_filters_list=[1024,512,512,256,256,128,128,64], kernel_width_list=[4,4,4,4,4,4,4,4], apply_dropout: bool = False):  
         inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #add 1D convolutions
         x = inputs
@@ -57,17 +63,26 @@ class HiCGAN():
             convParamDict["filters"] = nr_filters
             convParamDict["kernel_size"] = kernelWidth
             convParamDict["data_format"]="channels_last"
+            convParamDict["kernel_regularizer"]=tf.keras.regularizers.l2(0.01)
             if kernelWidth > 1:
                 convParamDict["padding"] = "same"
             x = Conv1D(**convParamDict)(x)
             x = BatchNormalization()(x)
-            x = tf.keras.layers.Activation("sigmoid")(x)
-        #make the shape of a 2D-image
-        x = Conv1D(filters=self.INPUT_SIZE, strides=3, kernel_size=4, data_format="channels_last", activation="sigmoid", padding="same", name="conv1D_final")(x)
-        y = tf.keras.layers.Permute((2,1))(x)
-        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
-        x = tf.keras.layers.Add()([x, y, diag])
-
+            if apply_dropout:
+                x = Dropout(0.5)(x)
+            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+        #make the shape of a square matrix
+        x = Conv1D(filters=self.INPUT_SIZE, 
+                    strides=3, 
+                    kernel_size=4, 
+                    data_format="channels_last", 
+                    activation="sigmoid", 
+                    padding="same", name="conv1D_final")(x)
+        #ensure the matrix is symmetric, i.e. x = transpose(x)
+        x_T = tf.keras.layers.Permute((2,1))(x) #this is the matrix transpose
+        x = tf.keras.layers.Add()([x, x_T])
+        x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x) #add transpose and divide by 2
+        #reshape the matrix into a 2D grayscale image
         x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
         model = tf.keras.Model(inputs=inputs, outputs=x, name="crazy_intro_model")
         #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
@@ -141,8 +156,7 @@ class HiCGAN():
         last = tf.keras.layers.Conv2DTranspose(self.OUTPUT_CHANNELS, 4,
                                                 strides=2,
                                                 padding='same',
-                                                kernel_initializer=initializer,
-                                                activation='sigmoid') # (bs, 256, 256, 3)
+                                                kernel_initializer=initializer) # (bs, 256, 256, 3)
 
         x = inputs
         x = twoD_conversion(x)
@@ -161,8 +175,11 @@ class HiCGAN():
             x = tf.keras.layers.Concatenate()([x, skip])
 
         x = last(x)
+        #enforce symmetry
         x_T = tf.keras.layers.Permute((2,1,3))(x)
         x = tf.keras.layers.Add()([x, x_T])
+        x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x)
+        x = tf.keras.layers.Activation("sigmoid")(x)
 
         return tf.keras.Model(inputs=inputs, outputs=x)
 
@@ -175,7 +192,7 @@ class HiCGAN():
         else: 
             pixel_loss = tf.reduce_mean(tf.square(target - gen_output))
         tv_loss = tf.reduce_mean(tf.image.total_variation(gen_output))
-        total_gen_loss = pixel_loss + 1/self.LAMBDA * gan_loss + self.tv_loss_Weight * tv_loss
+        total_gen_loss = self.lambda_pixel * pixel_loss + self.lambda_disc * gan_loss + self.tv_loss_Weight * tv_loss
         return total_gen_loss, gan_loss, pixel_loss
 
 
@@ -184,7 +201,7 @@ class HiCGAN():
 
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        twoD_conversion = self.discriminator_intro_model
+        twoD_conversion = self.oneD_twoD_conversion()
         #x = Flatten()(inp)
         #x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
         #x = tf.keras.layers.LeakyReLU()(x)
@@ -198,16 +215,38 @@ class HiCGAN():
         d = twoD_conversion(inp)
         d = tf.keras.layers.Concatenate()([d, tar])
         if self.INPUT_SIZE > 64:
+            #downsample and symmetrize 1 
             d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
+            d_T = tf.keras.layers.Permute((2,1,3))(d)
+            d = tf.keras.layers.Add()([d, d_T])
+            d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
+            #downsample and symmetrize 2
             d = HiCGAN.downsample(128, 4)(d)# (bs, inp.size/4, inp.size/4, 128)
+            d_T = tf.keras.layers.Permute((2,1,3))(d)
+            d = tf.keras.layers.Add()([d, d_T])
+            d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         else:    
+            #downsample and symmetrize 3
             d = HiCGAN.downsample(256, 4)(d)
+            d_T = tf.keras.layers.Permute((2,1,3))(d)
+            d = tf.keras.layers.Add()([d, d_T])
+            d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
+        #downsample and symmetrize 4
         d = HiCGAN.downsample(256, 4)(d) # (bs, inp.size/8, inp.size/8, 256)
+        d_T = tf.keras.layers.Permute((2,1,3))(d)
+        d = tf.keras.layers.Add()([d, d_T])
+        d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = Conv2D(512, 4, strides=1, padding="same", kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 512)
+        d_T = tf.keras.layers.Permute((2,1,3))(d)
+        d = tf.keras.layers.Add()([d, d_T])
+        d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = BatchNormalization()(d)
         d = LeakyReLU(alpha=0.2)(d)
         d = Conv2D(1, 4, strides=1, padding="same",
                         kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 1)
+        d_T = tf.keras.layers.Permute((2,1,3))(d)
+        d = tf.keras.layers.Add()([d, d_T])
+        d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = tf.keras.layers.Activation("sigmoid")(d)
         return tf.keras.Model(inputs=[inp, tar], outputs=d)
 
@@ -215,7 +254,7 @@ class HiCGAN():
         real_loss = self.loss_object(tf.ones_like(disc_real_output), disc_real_output)
         generated_loss = self.loss_object(tf.zeros_like(disc_generated_output), disc_generated_output)
         total_disc_loss = real_loss + generated_loss
-        return total_disc_loss
+        return total_disc_loss, real_loss, generated_loss
 
 
     @tf.function
@@ -226,8 +265,8 @@ class HiCGAN():
             disc_real_output = self.discriminator([input_image, target], training=True)
             disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
-            gen_total_loss, gen_gan_loss, gen_l1_loss = self.generator_loss(disc_generated_output, gen_output, target)
-            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
+            gen_total_loss, _, _ = self.generator_loss(disc_generated_output, gen_output, target)
+            disc_loss, disc_real_loss, disc_gen_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
 
         generator_gradients = gen_tape.gradient(gen_total_loss,
                                                 self.generator.trainable_variables)
@@ -239,7 +278,7 @@ class HiCGAN():
         self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
                                                     self.discriminator.trainable_variables))
 
-        return gen_total_loss, disc_loss
+        return gen_total_loss, disc_loss, disc_real_loss, disc_gen_loss
 
     @tf.function
     def validationStep(self, input_image, target, epoch):
@@ -248,8 +287,8 @@ class HiCGAN():
         disc_real_output = self.discriminator([input_image, target], training=True)
         disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
-        gen_total_loss, gen_gan_loss, gen_l1_loss = self.generator_loss(disc_generated_output, gen_output, target)
-        disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
+        gen_total_loss, _, _ = self.generator_loss(disc_generated_output, gen_output, target)
+        disc_loss, _, _ = self.discriminator_loss(disc_real_output, disc_generated_output)
 
         return gen_total_loss, disc_loss
 
@@ -273,10 +312,12 @@ class HiCGAN():
         gen_loss_train = []
         gen_loss_val = []
         disc_loss_train =[]
+        disc_loss_real_train = []
+        disc_loss_gen_train = []
         disc_loss_val = []
         for epoch in range(epochs):
             #generate sample output
-            if epoch % 5 == 0:
+            if epoch % self.example_plot_frequency == 0:
                 for example_input, example_target in test_ds.take(1):
                     self.generate_images(self.generator, example_input, example_target, epoch)
             # Train
@@ -284,10 +325,14 @@ class HiCGAN():
             train_pbar.set_description("Epoch {:05d}".format(epoch+1))
             gen_loss_batches = []
             disc_loss_batches = []
+            disc_real_loss_batches = []
+            disc_gen_loss_batches = []
             for _, (input_image, target) in train_pbar:
-                gen_loss, disc_loss = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
+                gen_loss, disc_loss, disc_real_loss, disc_gen_loss = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
                 gen_loss_batches.append(gen_loss)
                 disc_loss_batches.append(disc_loss)
+                disc_real_loss_batches.append(disc_real_loss)
+                disc_gen_loss_batches.append(disc_gen_loss)
                 if epoch == 0:
                     train_pbar.set_postfix( {"loss": "{:.4f}".format(gen_loss)} )
                 else:
@@ -295,7 +340,9 @@ class HiCGAN():
                                              "val loss": "{:.4f}".format(gen_loss_val[-1])} )
             gen_loss_train.append(np.mean(gen_loss_batches))
             disc_loss_train.append(np.mean(disc_loss_batches))
-            del gen_loss_batches, disc_loss_batches
+            disc_loss_real_train.append(np.mean(disc_real_loss_batches))
+            disc_loss_gen_train.append(np.mean(disc_gen_loss_batches))
+            del gen_loss_batches, disc_loss_batches, disc_real_loss_batches, disc_gen_loss_batches
             # Validation
             gen_loss_batches = []
             disc_loss_batches = []
@@ -308,13 +355,15 @@ class HiCGAN():
             del gen_loss_batches, disc_loss_batches, train_pbar
             
             # saving (checkpoint) the model every 20 epochs
-            if (epoch + 1) % 20 == 0:
+            if (epoch + 1) % self.progress_plot_frequency == 0:
                 #self.checkpoint.save(file_prefix = self.checkpoint_prefix)
                 #plot loss
-                utils.plotLoss(pLossValueLists=[gen_loss_train, gen_loss_val, disc_loss_train, disc_loss_val], 
-                            pNameList=["gen.loss train", "gen.loss val", "disc.loss train", "disc.loss val"], 
-                            pFilename=self.progress_plot_name,
-                            useLogscale=True)
+                utils.plotLoss(pGeneratorLossValueLists=[gen_loss_train, gen_loss_val],
+                              pDiscLossValueLists=[disc_loss_train, disc_loss_real_train, disc_loss_gen_train, disc_loss_val],
+                              pGeneratorLossNameList=["training", "validation"],
+                              pDiscLossNameList=["train total", "train real", "train gen.", "valid. total"],
+                              pFilename=self.progress_plot_name,
+                              useLogscaleList=[True, False])
                 np.savez(os.path.join(self.log_dir, "lossValues_{:05d}.npz".format(epoch)), 
                                     genLossTrain=gen_loss_train, 
                                     genLossVal=gen_loss_val, 
@@ -325,10 +374,12 @@ class HiCGAN():
             
 
         self.checkpoint.save(file_prefix = self.checkpoint_prefix)
-        utils.plotLoss(pLossValueLists=[gen_loss_train, gen_loss_val, disc_loss_train, disc_loss_val], 
-                            pNameList=["gen.loss train", "gen.loss val", "disc.loss train", "disc.loss val"], 
-                            pFilename=self.progress_plot_name,
-                            useLogscale=True)
+        utils.plotLoss(pGeneratorLossValueLists=[gen_loss_train, gen_loss_val],
+                       pDiscLossValueLists=[disc_loss_train, disc_loss_real_train, disc_loss_gen_train, disc_loss_val],
+                       pGeneratorLossNameList=["training", "validation"],
+                       pDiscLossNameList=["train total", "train real", "train gen.", "valid. total"],
+                       pFilename=self.progress_plot_name,
+                       useLogscaleList=[True, False])
         np.savez(os.path.join(self.log_dir, "lossValues_{:05d}.npz".format(epoch)), 
                                     genLossTrain=gen_loss_train, 
                                     genLossVal=gen_loss_val, 
@@ -371,6 +422,7 @@ class HiCGAN():
             raise ValueError(msg)
 
     def loadIntroModel(self, trainedModelPath: str):
+        '''load pretrained model for 1D-2D conversion as defined by Farre et al.'''
         try:
             introModel = tf.keras.models.load_model(filepath=trainedModelPath)
         except Exception as e:
@@ -385,11 +437,8 @@ class HiCGAN():
         x = tf.keras.layers.Add()([x, x_T, diag])
         out = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
         introModel_gen = tf.keras.models.Model(inputs=inputs, outputs=out, name="gen_intro_preloaded")
-        introModel_disc = tf.keras.models.Model(inputs=inputs, outputs=out, name="disc_intro_preloaded")
         self.generator_intro_model = introModel_gen
-        self.discriminator_intro_model = introModel_disc
-        self.generator = self.Generator()  
-        self.discriminator = self.Discriminator()      
+        self.generator = self.Generator()    
 
 class CustomReshapeLayer(tf.keras.layers.Layer):
     '''
