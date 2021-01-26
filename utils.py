@@ -825,3 +825,22 @@ def computeScore(pMatrix, pDiamondsize):
     rowStartList, rowEndList, columnStartList, columnEndList = getDiamondIndices(pMatsize=pMatrix.shape[0], pDiamondsize=pDiamondsize)
     l = [ pMatrix[i:j,k:l] for i,j,k,l in zip(rowStartList,rowEndList,columnStartList,columnEndList) ]
     return np.array([ np.mean(i) for i in l ]).astype("float32")   
+
+def standardizeArray(pArray, axis=None):
+    '''
+    standardize 2D array by subtracting mean and dividing by standard deviation
+    '''
+    if axis is not None and axis != 0 and axis != 1:
+        return pArray
+    if len(pArray.shape) != 2:
+        print("Warning: only 2D arrays supported for standardization")
+        return pArray
+    means = np.mean(pArray, axis=axis)
+    stdevs = np.std(pArray, axis=axis)
+    if axis != 1:
+        out_arr = pArray - means
+        out_arr /= stdevs
+    else:
+        out_arr = pArray - means[:,None] #slicing instead of 2x np.transpose
+        out_arr /= stdevs[:,None]
+    return out_arr
