@@ -97,14 +97,15 @@ class DataContainer():
             if clampFeatures:
                 tmpArray = utils.clampArray(tmpArray)
             if scaleFeatures:
+                pass
                 #tmpArray = utils.scaleArray(tmpArray)
-                tmpArray = utils.standardizeArray(tmpArray, axis=1)
             self.FactorDataArray[i] = tmpArray
             nr_nonzero_abs = np.count_nonzero(tmpArray)
             nr_nonzero_perc = nr_nonzero_abs / tmpArray.size * 100
             msg2 = "{:s} - min. {:.3f} - max. {:.3f} - nnz. {:d} ({:.2f}%)"
             msg2 = msg2.format(bigwigFile, tmpArray.min(), tmpArray.max(), nr_nonzero_abs, nr_nonzero_perc)
             featLoadedMsgList.append(msg2)
+        self.FactorDataArray = utils.standardizeArray(self.FactorDataArray, axis=1)
         self.FactorDataArray = np.transpose(self.FactorDataArray)
         print(msg + "\n".join(featLoadedMsgList))
             
