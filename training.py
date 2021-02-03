@@ -238,7 +238,8 @@ def training(trainmatrices,
                                 tv_weight=lossweighttv, 
                                 input_size=windowsize,
                                 learning_rate=learningrate,
-                                adam_beta_1=beta1)
+                                adam_beta_1=beta1,
+                                plot_type=figuretype)
     if pretrainedintromodel is not None:
         hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)

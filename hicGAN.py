@@ -18,6 +18,7 @@ class HiCGAN():
                     tv_weight: float = 1e-10,
                     input_size: int = 256,
                     plot_frequency: int = 20,
+                    plot_type: str = "png",
                     learning_rate: float = 2e-5,
                     adam_beta_1: float = 0.5): 
         super().__init__()
@@ -48,8 +49,11 @@ class HiCGAN():
                                     discriminator_optimizer=self.discriminator_optimizer,
                                     generator=self.generator,
                                     discriminator=self.discriminator)
-
-        self.progress_plot_name = os.path.join(self.log_dir, "lossOverEpochs.png")
+        self.plot_type = plot_type
+        if self.plot_type not in ["png", "pdf", "svg"]:
+            self.plot_type = "png"
+            print("plot type {:s} unsupported, changed to png".format(plot_type))
+        self.progress_plot_name = os.path.join(self.log_dir, "lossOverEpochs.{:s}".format(self.plot_type))
         self.progress_plot_frequency = plot_frequency
         self.example_plot_frequency = 5
 
