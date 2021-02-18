@@ -88,9 +88,9 @@ class HiCGAN():
         x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x) #add transpose and divide by 2
         #reshape the matrix into a 2D grayscale image
         x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
-        model = tf.keras.Model(inputs=inputs, outputs=x, name="crazy_intro_model")
-        #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
-        #model.summary()
+        model = tf.keras.Model(inputs=inputs, outputs=x, name="embedding_network")
+        model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
+        model.summary()
         return model
 
     @staticmethod
@@ -185,7 +185,10 @@ class HiCGAN():
         x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x)
         x = tf.keras.layers.Activation("sigmoid")(x)
 
-        return tf.keras.Model(inputs=inputs, outputs=x)
+        generator_model = tf.keras.Model(inputs=inputs, outputs=x, name="generator")
+        generator_model.build(input_shape=[3*self.INPUT_SIZE,self.NR_FACTORS])
+        generator_model.summary()
+        return generator_model
 
 
     def generator_loss(self, disc_generated_output, gen_output, target):
@@ -220,39 +223,43 @@ class HiCGAN():
         d = tf.keras.layers.Concatenate()([d, tar])
         if self.INPUT_SIZE > 64:
             #downsample and symmetrize 1 
-            d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
+            d = HiCGAN.downsample(64, 4, False)(d)
             d_T = tf.keras.layers.Permute((2,1,3))(d)
             d = tf.keras.layers.Add()([d, d_T])
             d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
-            #downsample and symmetrize 2
-            d = HiCGAN.downsample(128, 4)(d)# (bs, inp.size/4, inp.size/4, 128)
-            d_T = tf.keras.layers.Permute((2,1,3))(d)
-            d = tf.keras.layers.Add()([d, d_T])
-            d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
-        else:    
-            #downsample and symmetrize 3
-            d = HiCGAN.downsample(256, 4)(d)
-            d_T = tf.keras.layers.Permute((2,1,3))(d)
-            d = tf.keras.layers.Add()([d, d_T])
-            d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
-        #downsample and symmetrize 4
-        d = HiCGAN.downsample(256, 4)(d) # (bs, inp.size/8, inp.size/8, 256)
+        #downsample and symmetrize 2
+        d = HiCGAN.downsample(128, 4)(d)
         d_T = tf.keras.layers.Permute((2,1,3))(d)
         d = tf.keras.layers.Add()([d, d_T])
         d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
-        d = Conv2D(512, 4, strides=1, padding="same", kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 512)
+        #downsample and symmetrize 3
+        d = HiCGAN.downsample(256, 4)(d) 
+        d_T = tf.keras.layers.Permute((2,1,3))(d)
+        d = tf.keras.layers.Add()([d, d_T])
+        d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
+        #downsample and symmetrize 4
+        d = HiCGAN.downsample(512, 4)(d)
+        d_T = tf.keras.layers.Permute((2,1,3))(d)
+        d = tf.keras.layers.Add()([d, d_T])
+        d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
+        #convolution without downsampling, again symmetrize
+        d = Conv2D(512, 4, strides=1, padding="same", kernel_initializer=initializer)(d)
         d_T = tf.keras.layers.Permute((2,1,3))(d)
         d = tf.keras.layers.Add()([d, d_T])
         d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = BatchNormalization()(d)
         d = LeakyReLU(alpha=0.2)(d)
+        #convolution into single output plane
         d = Conv2D(1, 4, strides=1, padding="same",
-                        kernel_initializer=initializer)(d) #(bs, inp.size/8, inp.size/8, 1)
+                        kernel_initializer=initializer)(d)
         d_T = tf.keras.layers.Permute((2,1,3))(d)
         d = tf.keras.layers.Add()([d, d_T])
         d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
         d = tf.keras.layers.Activation("sigmoid")(d)
-        return tf.keras.Model(inputs=[inp, tar], outputs=d)
+        discriminator_model = tf.keras.Model(inputs=[inp, tar], outputs=d, name="discriminator")
+        discriminator_model.build(input_shape=[[3*self.INPUT_SIZE, self.NR_FACTORS],[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS]])
+        discriminator_model.summary()
+        return discriminator_model
 
     def discriminator_loss(self, disc_real_output, disc_generated_output):
         real_loss = self.loss_object(tf.ones_like(disc_real_output), disc_real_output)
