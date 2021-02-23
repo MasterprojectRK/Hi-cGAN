@@ -2,11 +2,9 @@ import utils
 import records
 import os
 import numpy as np
-from Bio import SeqIO
 from tensorflow import dtypes as tfdtypes
 from scipy.sparse import save_npz, csr_matrix
 from tqdm import tqdm
-import pandas as pd
 
 class DataContainer():
     def __init__(self, chromosome, matrixfilepath, chromatinFolder, binsize=None):

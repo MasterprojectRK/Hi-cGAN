@@ -50,7 +50,7 @@ import records
               help="loss weight for the discriminator error")
 @click.option("--lossTypePixel", "-ltp", required=False,
              type=click.Choice(["L1", "L2"]), 
-             default="L2", show_default=True,
+             default="L1", show_default=True,
              help="Type of per-pixel loss to use for the generator; choose from L1 (mean abs. error) or L2 (mean squared error)")
 @click.option("--lossWeightTv", "-lvt", required=False,
              type=click.FloatRange(min=0.0),

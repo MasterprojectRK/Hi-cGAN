@@ -9,10 +9,7 @@ import matplotlib.colors as colors
 from matplotlib.ticker import MultipleLocator
 from tqdm import tqdm
 from scipy import sparse
-from Bio import SeqIO
-from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn import metrics as metrics
-import pandas as pd
 
 def getBigwigFileList(pDirectory):
     #returns a list of bigwig files in pDirectory
@@ -404,42 +401,6 @@ def clampArray(pArray):
         clampedArray[clampedArray < lowerClampingBound] = lowerClampingBound
         clampedArray[clampedArray > upperClampingBound] = upperClampingBound
     return clampedArray
-
-def encodeSequence(pSequenceStr, pClasses=None):
-    #one-hot encoding for DNA sequences
-    if pSequenceStr is None or pSequenceStr == "":
-        msg = "Aborting. DNA sequence is empty"
-        raise SystemExit(msg)
-    mlb = MultiLabelBinarizer(classes=pClasses)
-    encodedSequenceArray = mlb.fit_transform(pSequenceStr).astype("uint8")
-    if encodedSequenceArray.shape[1] != 4:
-        msg = "Warning: DNA sequence contains more than the 4 nucleotide symbols A,C,G,T\n"
-        msg += "Check your input sequence, if this is not intended."
-        print(msg)
-        print("Contained symbols:", ", ".join(mlb.classes_))
-    return encodedSequenceArray
-
-def fillEncodedSequence(pEncodedSequenceArray, pBinSizeInt):
-    #fill one-hot encoded sequence array with zero vectors such that
-    #the length matches the number of bins
-    if pBinSizeInt is None or not isinstance(pBinSizeInt, int):
-        return
-    actualLengthInt = pEncodedSequenceArray.shape[0] #here, length in basepairs
-    targetLengthInt = int(np.ceil(actualLengthInt/pBinSizeInt))*pBinSizeInt #in basepairs
-    returnArray = None
-    if targetLengthInt > actualLengthInt:
-        #append zero vectors to the array to fill the last bin
-        #in case the chromosome length is not divisible by bin size (as is normal)
-        toAppendArray = np.zeros((targetLengthInt-actualLengthInt,pEncodedSequenceArray.shape[1]),dtype="uint8")
-        returnArray = np.append(pEncodedSequenceArray,toAppendArray,axis=0)
-    else:
-        msg = "Warning: could not append zeros to end of array.\n"
-        msg += "Target length {:d}, actual length {:d}\n"
-        msg += "Array left unchanged."
-        msg = msg.format(targetLengthInt, actualLengthInt)
-        print(msg)
-        returnArray = pEncodedSequenceArray
-    return returnArray
 
 def computePearsonCorrelation(pCoolerFile1, pCoolerFile2, 
                               pWindowsize_bp,
