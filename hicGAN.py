@@ -458,6 +458,19 @@ class HiCGAN():
     def predictionStep(self, input_batch, training=True):
         return self.generator(input_batch, training=training)
   
+    
+    def loadGenerator(self, trainedModelPath: str):
+        '''
+            load a trained generator model for prediction
+        '''
+        try:
+            trainedModel = tf.keras.models.load_model(filepath=trainedModelPath, 
+                                                  custom_objects={"CustomReshapeLayer": CustomReshapeLayer(self.INPUT_SIZE)})
+            self.generator = trainedModel
+        except Exception as e:
+            msg = str(e)
+            msg += "\nError: failed to load trained model"
+            raise ValueError(msg)
 
 class CustomReshapeLayer(tf.keras.layers.Layer):
     '''
