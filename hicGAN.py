@@ -439,8 +439,11 @@ class HiCGAN():
         generatorPlotName = os.path.join(outputpath, generatorPlotName)
         discriminatorPlotName = "discriminatorModel.{:s}".format(figuretype)
         discriminatorPlotName = os.path.join(outputpath, discriminatorPlotName)
+        embeddingPlotName = "embeddingModel.{:s}".format(figuretype)
+        embeddingPlotName = os.path.join(outputpath, embeddingPlotName)
         tf.keras.utils.plot_model(self.generator, show_shapes=True, to_file=generatorPlotName)
         tf.keras.utils.plot_model(self.discriminator, show_shapes=True, to_file=discriminatorPlotName)
+        tf.keras.utils.plot_model(self.generator_intro_model, show_shapes=True, to_file=embeddingPlotName)
 
     def predict(self, test_ds, steps_per_record):
         predictedArray = []
@@ -454,37 +457,7 @@ class HiCGAN():
     @tf.function
     def predictionStep(self, input_batch, training=True):
         return self.generator(input_batch, training=training)
-
-    
-    def loadGenerator(self, trainedModelPath: str):
-        try:
-            trainedModel = tf.keras.models.load_model(filepath=trainedModelPath, 
-                                                  custom_objects={"CustomReshapeLayer": CustomReshapeLayer(self.INPUT_SIZE),
-                                                                  "SymmetricFromTriuLayer": SymmetricFromTriuLayer()})
-            self.generator = trainedModel
-        except Exception as e:
-            msg = str(e)
-            msg += "\nError: failed to load trained model"
-            raise ValueError(msg)
-
-    def loadIntroModel(self, trainedModelPath: str):
-        '''load pretrained model for 1D-2D conversion as defined by Farre et al.'''
-        try:
-            introModel = tf.keras.models.load_model(filepath=trainedModelPath)
-        except Exception as e:
-            msg = str(e)
-            msg += "\nError: failed to load trained model"
-            raise ValueError(msg)
-        inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
-        x = introModel(inputs)
-        x = CustomReshapeLayer(self.INPUT_SIZE)(x)
-        x_T = tf.keras.layers.Permute((2,1))(x)
-        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
-        x = tf.keras.layers.Add()([x, x_T, diag])
-        out = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
-        introModel_gen = tf.keras.models.Model(inputs=inputs, outputs=out, name="gen_intro_preloaded")
-        self.generator_intro_model = introModel_gen
-        self.generator = self.Generator()    
+  
 
 class CustomReshapeLayer(tf.keras.layers.Layer):
     '''
@@ -511,26 +484,3 @@ class CustomReshapeLayer(tf.keras.layers.Layer):
 
     def get_config(self):
         return {"matsize": self.matsize}
-
-class SymmetricFromTriuLayer(tf.keras.layers.Layer):
-    '''
-    make upper triangular tensors symmetric
-    example:
-    [[1,2,3],
-     [0,4,5],
-     [0,0,6]] 
-    becomes:
-    [[1,2,3],
-     [2,4,5],
-     [3,5,6]] 
-    '''
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def call(self, inputs):
-        return tf.map_fn(self.makeSymmetric, inputs, parallel_iterations=20, swap_memory=True)
-
-    def makeSymmetric(self, inputMat):
-        outMat = inputMat + tf.transpose(inputMat) - tf.linalg.band_part(inputMat, 0, 0)
-        #the diagonal is the same for input and transpose, so subtract it once
-        return outMat
