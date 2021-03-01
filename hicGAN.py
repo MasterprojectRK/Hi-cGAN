@@ -88,7 +88,7 @@ class HiCGAN():
         x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x) #add transpose and divide by 2
         #reshape the matrix into a 2D grayscale image
         x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
-        model = tf.keras.Model(inputs=inputs, outputs=x, name="crazy_intro_model")
+        model = tf.keras.Model(inputs=inputs, outputs=x, name="CNN-embedding")
         #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #model.summary()
         return model
