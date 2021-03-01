@@ -21,7 +21,8 @@ class HiCGAN():
                     plot_type: str = "png",
                     learning_rate: float = 2e-5,
                     adam_beta_1: float = 0.5,
-                    pretrained_model_path: str = ""): 
+                    pretrained_model_path: str = "",
+                    embedding_model_type: str = "CNN"): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
@@ -37,11 +38,19 @@ class HiCGAN():
         self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
-
-        if pretrained_model_path != "":
-            self.generator_intro_model = self.dnn_embedding(pretrained_model_path=pretrained_model_path)
+        #choose the desired embedding network: DNN (like Farre et al.) or CNN
+        if embedding_model_type not in ["DNN", "CNN", "mixed"]:
+            msg = "Embedding {:s} not supported".format(embedding_model_type)
+            raise NotImplementedError(msg)
+        if embedding_model_type == "DNN":
+            self.generator_embedding = self.dnn_embedding(pretrained_model_path=pretrained_model_path)
+            self.discriminator_embedding = self.dnn_embedding(pretrained_model_path=pretrained_model_path)
+        elif embedding_model_type == "mixed":
+            self.generator_embedding = self.dnn_embedding(pretrained_model_path=pretrained_model_path)
+            self.discriminator_embedding = self.cnn_embedding()
         else:
-            self.generator_intro_model = self.cnn_embedding()
+            self.generator_embedding = self.cnn_embedding()
+            self.discriminator_embedding = self.cnn_embedding()         
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
@@ -104,8 +113,7 @@ class HiCGAN():
                     strides=1, 
                     padding="valid",
                     data_format="channels_last",
-                    activation="sigmoid",
-                    name="Conv1D_1")(inputs)
+                    activation="sigmoid")(inputs)
         x = Flatten(name="flatten_1")(x)
         for i, nr_neurons in enumerate([460,881,1690]):
             layerName = "dense_" + str(i+1)
@@ -113,7 +121,7 @@ class HiCGAN():
             layerName = "dropout_" + str(i+1)
             x = Dropout(0.1, name=layerName)(x)
         nr_output_neurons = (self.INPUT_SIZE * (self.INPUT_SIZE + 1)) // 2
-        x = Dense(nr_output_neurons, activation="relu",kernel_regularizer="l2")(x)
+        x = Dense(nr_output_neurons, activation="relu",kernel_regularizer="l2", name="dense_out")(x)
         dnn_model = tf.keras.Model(inputs=inputs, outputs=x)
         if pretrained_model_path != "":
             try:
@@ -164,7 +172,7 @@ class HiCGAN():
     def Generator(self):
         inputs = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE,self.NR_FACTORS], name="factorData")
 
-        twoD_conversion = self.generator_intro_model
+        twoD_conversion = self.generator_embedding
         #the downsampling part of the network, defined for 256x256 images
         down_stack = [
             HiCGAN.downsample(64, 4, apply_batchnorm=False), # (bs, 128, 128, 64)
@@ -247,7 +255,7 @@ class HiCGAN():
 
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        twoD_conversion = self.cnn_embedding()
+        twoD_conversion = self.discriminator_embedding
         #x = Flatten()(inp)
         #x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
         #x = tf.keras.layers.LeakyReLU()(x)
@@ -439,11 +447,14 @@ class HiCGAN():
         generatorPlotName = os.path.join(outputpath, generatorPlotName)
         discriminatorPlotName = "discriminatorModel.{:s}".format(figuretype)
         discriminatorPlotName = os.path.join(outputpath, discriminatorPlotName)
-        embeddingPlotName = "embeddingModel.{:s}".format(figuretype)
-        embeddingPlotName = os.path.join(outputpath, embeddingPlotName)
+        generatorEmbeddingPlotName = "generatorEmbeddingModel.{:s}".format(figuretype)
+        generatorEmbeddingPlotName = os.path.join(outputpath, generatorEmbeddingPlotName)
+        discriminatorEmbeddingPlotName = "discriminatorEmbeddingModel.{:s}".format(figuretype)
+        discriminatorEmbeddingPlotName = os.path.join(outputpath, discriminatorEmbeddingPlotName)
         tf.keras.utils.plot_model(self.generator, show_shapes=True, to_file=generatorPlotName)
         tf.keras.utils.plot_model(self.discriminator, show_shapes=True, to_file=discriminatorPlotName)
-        tf.keras.utils.plot_model(self.generator_intro_model, show_shapes=True, to_file=embeddingPlotName)
+        tf.keras.utils.plot_model(self.generator_embedding, show_shapes=True, to_file=generatorEmbeddingPlotName)
+        tf.keras.utils.plot_model(self.discriminator_embedding, show_shapes=True, to_file=discriminatorEmbeddingPlotName)
 
     def predict(self, test_ds, steps_per_record):
         predictedArray = []

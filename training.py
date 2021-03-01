@@ -67,6 +67,10 @@ import records
 @click.option("--flipsamples", "-fs", required=False,
              type=bool, default=False, show_default=True,
              help="Flip training matrices and chromatin features (data augmentation)")
+@click.option("--embeddingType", "-emb", required=False,
+             type=click.Choice(["CNN", "DNN", "mixed"]),
+             default="CNN", show_default=True,
+             help="Type of embedding to use for generator and discriminator. CNN, DNN, or mixed (Gen: CNN, Disc: DNN)")
 @click.option("--pretrainedIntroModel", "-ptm", required=False,
              type=click.Path(exists=True, dir_okay=False, readable=True),
              help="pretrained model for 1D-2D conversion of inputs")
@@ -96,6 +100,7 @@ def training(trainmatrices,
              learningrate,
              beta1,
              flipsamples,
+             embeddingtype,
              pretrainedintromodel,
              figuretype,
              recordsize):
@@ -242,6 +247,7 @@ def training(trainmatrices,
                                 learning_rate=learningrate,
                                 adam_beta_1=beta1,
                                 plot_type=figuretype,
+                                embedding_model_type=embeddingtype,
                                 pretrained_model_path=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
     hicGanModel.fit(train_ds=trainDs, epochs=epochs, test_ds=validationDs, steps_per_epoch=steps_per_epoch)
