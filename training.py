@@ -231,6 +231,8 @@ def training(trainmatrices,
     steps_per_epoch = int( np.floor(nr_trainingSamples / batchsize) )
     if flipsamples:
         steps_per_epoch *= 2
+    if pretrainedintromodel is None:
+        pretrainedintromodel = ""
     hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, 
                                 lambda_pixel=lossweightpixel,
                                 lambda_disc=lossweightdisc, 
@@ -239,9 +241,8 @@ def training(trainmatrices,
                                 input_size=windowsize,
                                 learning_rate=learningrate,
                                 adam_beta_1=beta1,
-                                plot_type=figuretype)
-    if pretrainedintromodel is not None:
-        hicGanModel.loadIntroModel(trainedModelPath=pretrainedintromodel)
+                                plot_type=figuretype,
+                                pretrained_model_path=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
     hicGanModel.fit(train_ds=trainDs, epochs=epochs, test_ds=validationDs, steps_per_epoch=steps_per_epoch)
 

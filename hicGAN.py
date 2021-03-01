@@ -20,7 +20,8 @@ class HiCGAN():
                     plot_frequency: int = 20,
                     plot_type: str = "png",
                     learning_rate: float = 2e-5,
-                    adam_beta_1: float = 0.5): 
+                    adam_beta_1: float = 0.5,
+                    pretrained_model_path: str = ""): 
         super().__init__()
 
         self.OUTPUT_CHANNELS = 1
@@ -37,7 +38,10 @@ class HiCGAN():
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
 
-        self.generator_intro_model = self.oneD_twoD_conversion()
+        if pretrained_model_path != "":
+            self.generator_intro_model = self.dnn_embedding(pretrained_model_path=pretrained_model_path)
+        else:
+            self.generator_intro_model = self.cnn_embedding()
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
 
@@ -57,7 +61,7 @@ class HiCGAN():
         self.progress_plot_frequency = plot_frequency
         self.example_plot_frequency = 5
 
-    def oneD_twoD_conversion(self, nr_filters_list=[1024,512,512,256,256,128,128,64], kernel_width_list=[4,4,4,4,4,4,4,4], apply_dropout: bool = False):  
+    def cnn_embedding(self, nr_filters_list=[1024,512,512,256,256,128,128,64], kernel_width_list=[4,4,4,4,4,4,4,4], apply_dropout: bool = False):  
         inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #add 1D convolutions
         x = inputs
@@ -92,6 +96,44 @@ class HiCGAN():
         #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #model.summary()
         return model
+
+    def dnn_embedding(self, pretrained_model_path : str = ""):
+        inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
+        x = Conv1D(filters=1,
+                    kernel_size=1,
+                    strides=1, 
+                    padding="valid",
+                    data_format="channels_last",
+                    activation="sigmoid",
+                    name="Conv1D_1")(inputs)
+        x = Flatten(name="flatten_1")(x)
+        for i, nr_neurons in enumerate([460,881,1690]):
+            layerName = "dense_" + str(i+1)
+            x = Dense(nr_neurons, activation="relu", kernel_regularizer="l2", name=layerName)(x)
+            layerName = "dropout_" + str(i+1)
+            x = Dropout(0.1, name=layerName)(x)
+        nr_output_neurons = (self.INPUT_SIZE * (self.INPUT_SIZE + 1)) // 2
+        x = Dense(nr_output_neurons, activation="relu",kernel_regularizer="l2")(x)
+        dnn_model = tf.keras.Model(inputs=inputs, outputs=x)
+        if pretrained_model_path != "":
+            try:
+                dnn_model.load_weights(pretrained_model_path)
+                print("model weights successfully loaded")
+            except Exception as e:
+                msg = str(e)
+                msg += "\nCould not load the weights of pre-trained model"
+                print(msg)
+        inputs2 = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
+        x = dnn_model(inputs2)
+        #place the upper triangular part from dnn model into full matrix
+        x = CustomReshapeLayer(self.INPUT_SIZE)(x)
+        #symmetrize the output
+        x_T = tf.keras.layers.Permute((2,1))(x)
+        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
+        x = tf.keras.layers.Add()([x, x_T, diag])
+        out = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
+        dnn_embedding = tf.keras.Model(inputs=inputs2, outputs=out, name="DNN-embedding")
+        return dnn_embedding
 
     @staticmethod
     def downsample(filters, size, apply_batchnorm=True):
@@ -205,7 +247,7 @@ class HiCGAN():
 
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        twoD_conversion = self.oneD_twoD_conversion()
+        twoD_conversion = self.cnn_embedding()
         #x = Flatten()(inp)
         #x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
         #x = tf.keras.layers.LeakyReLU()(x)
@@ -397,8 +439,11 @@ class HiCGAN():
         generatorPlotName = os.path.join(outputpath, generatorPlotName)
         discriminatorPlotName = "discriminatorModel.{:s}".format(figuretype)
         discriminatorPlotName = os.path.join(outputpath, discriminatorPlotName)
+        embeddingPlotName = "embeddingModel.{:s}".format(figuretype)
+        embeddingPlotName = os.path.join(outputpath, embeddingPlotName)
         tf.keras.utils.plot_model(self.generator, show_shapes=True, to_file=generatorPlotName)
         tf.keras.utils.plot_model(self.discriminator, show_shapes=True, to_file=discriminatorPlotName)
+        tf.keras.utils.plot_model(self.generator_intro_model, show_shapes=True, to_file=embeddingPlotName)
 
     def predict(self, test_ds, steps_per_record):
         predictedArray = []
@@ -412,37 +457,7 @@ class HiCGAN():
     @tf.function
     def predictionStep(self, input_batch, training=True):
         return self.generator(input_batch, training=training)
-
-    
-    def loadGenerator(self, trainedModelPath: str):
-        try:
-            trainedModel = tf.keras.models.load_model(filepath=trainedModelPath, 
-                                                  custom_objects={"CustomReshapeLayer": CustomReshapeLayer(self.INPUT_SIZE),
-                                                                  "SymmetricFromTriuLayer": SymmetricFromTriuLayer()})
-            self.generator = trainedModel
-        except Exception as e:
-            msg = str(e)
-            msg += "\nError: failed to load trained model"
-            raise ValueError(msg)
-
-    def loadIntroModel(self, trainedModelPath: str):
-        '''load pretrained model for 1D-2D conversion as defined by Farre et al.'''
-        try:
-            introModel = tf.keras.models.load_model(filepath=trainedModelPath)
-        except Exception as e:
-            msg = str(e)
-            msg += "\nError: failed to load trained model"
-            raise ValueError(msg)
-        inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
-        x = introModel(inputs)
-        x = CustomReshapeLayer(self.INPUT_SIZE)(x)
-        x_T = tf.keras.layers.Permute((2,1))(x)
-        diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
-        x = tf.keras.layers.Add()([x, x_T, diag])
-        out = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
-        introModel_gen = tf.keras.models.Model(inputs=inputs, outputs=out, name="gen_intro_preloaded")
-        self.generator_intro_model = introModel_gen
-        self.generator = self.Generator()    
+  
 
 class CustomReshapeLayer(tf.keras.layers.Layer):
     '''
@@ -469,26 +484,3 @@ class CustomReshapeLayer(tf.keras.layers.Layer):
 
     def get_config(self):
         return {"matsize": self.matsize}
-
-class SymmetricFromTriuLayer(tf.keras.layers.Layer):
-    '''
-    make upper triangular tensors symmetric
-    example:
-    [[1,2,3],
-     [0,4,5],
-     [0,0,6]] 
-    becomes:
-    [[1,2,3],
-     [2,4,5],
-     [3,5,6]] 
-    '''
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def call(self, inputs):
-        return tf.map_fn(self.makeSymmetric, inputs, parallel_iterations=20, swap_memory=True)
-
-    def makeSymmetric(self, inputMat):
-        outMat = inputMat + tf.transpose(inputMat) - tf.linalg.band_part(inputMat, 0, 0)
-        #the diagonal is the same for input and transpose, so subtract it once
-        return outMat
