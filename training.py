@@ -186,6 +186,8 @@ def training(trainmatrices,
                                          figuretype=figuretype)
             container.saveMatrix(outputpath=outfolder, index=idx)
         nr_samples_list.append(container.getNumberSamples())
+    #data is no longer needed
+    for container in traindataContainerList + valdataContainerList:
         container.unloadData()
     traindataRecords = [item for sublist in tfRecordFilenames[0:len(traindataContainerList)] for item in sublist]
     valdataRecords = [item for sublist in tfRecordFilenames[len(traindataContainerList):] for item in sublist]
