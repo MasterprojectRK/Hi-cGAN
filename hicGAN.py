@@ -35,7 +35,7 @@ class HiCGAN():
         self.lambda_disc = lambda_disc
         self.tv_loss_Weight = tv_weight
         self.loss_type_pixel = loss_type_pixel
-        self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=False)
+        self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
         #choose the desired embedding network: DNN (like Farre et al.) or CNN
@@ -301,7 +301,7 @@ class HiCGAN():
         d_T = tf.keras.layers.Permute((2,1,3))(d)
         d = tf.keras.layers.Add()([d, d_T])
         d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
-        d = tf.keras.layers.Activation("sigmoid")(d)
+        #d = tf.keras.layers.Activation("sigmoid")(d)
         return tf.keras.Model(inputs=[inp, tar], outputs=d)
 
     def discriminator_loss(self, disc_real_output, disc_generated_output):
