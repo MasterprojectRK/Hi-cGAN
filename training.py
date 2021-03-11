@@ -173,6 +173,7 @@ def training(trainmatrices,
         container.loadData(**loadParams)
         if not container0.checkCompatibility(container):
             msg = "Aborting. Incompatible data"
+            raise SystemExit(msg)
         tfRecordFilenames.append(container.writeTFRecord(pOutfolder=outfolder,
                                                         pRecordSize=recordsize))
         if debugstate is not None:
@@ -189,7 +190,7 @@ def training(trainmatrices,
     traindataRecords = [item for sublist in tfRecordFilenames[0:len(traindataContainerList)] for item in sublist]
     valdataRecords = [item for sublist in tfRecordFilenames[len(traindataContainerList):] for item in sublist]
 
-    #different binsizes are ok, as long as no sequence is used
+    #different binsizes are ok
     #not clear which binsize to use for prediction when they differ during training.
     #For now, store the max. 
     binsize = max([container.binsize for container in traindataContainerList])
