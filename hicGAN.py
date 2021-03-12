@@ -35,7 +35,7 @@ class HiCGAN():
         self.lambda_disc = lambda_disc
         self.tv_loss_Weight = tv_weight
         self.loss_type_pixel = loss_type_pixel
-        self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=False)
+        self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
         #choose the desired embedding network: DNN (like Farre et al.) or CNN
@@ -69,6 +69,22 @@ class HiCGAN():
         self.progress_plot_name = os.path.join(self.log_dir, "lossOverEpochs.{:s}".format(self.plot_type))
         self.progress_plot_frequency = plot_frequency
         self.example_plot_frequency = 5
+
+        #losses per epochs
+        self.__gen_train_loss_epochs = []
+        self.__disc_train_loss_true_epochs = []
+        self.__disc_train_loss_fake_epochs = []
+        self.__gen_val_loss_epochs = []
+        self.__disc_val_loss_epochs = []
+        #losses per batch
+        self.__gen_train_loss_batches = []
+        self.__disc_train_loss_true_batches = []
+        self.__disc_train_loss_fake_batches = []
+        self.__gen_val_loss_batches = []
+        self.__disc_val_loss_batches = []
+
+        self.__epoch_counter = 0
+        self.__batch_counter = 0
 
     def cnn_embedding(self, nr_filters_list=[1024,512,512,256,256,128,128,64], kernel_width_list=[4,4,4,4,4,4,4,4], apply_dropout: bool = False):  
         inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
@@ -235,7 +251,7 @@ class HiCGAN():
         x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x)
         x = tf.keras.layers.Activation("sigmoid")(x)
 
-        return tf.keras.Model(inputs=inputs, outputs=x)
+        return tf.keras.Model(inputs=inputs, outputs=x, name="Generator")
 
 
     def generator_loss(self, disc_generated_output, gen_output, target):
@@ -255,18 +271,9 @@ class HiCGAN():
 
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        twoD_conversion = self.discriminator_embedding
-        #x = Flatten()(inp)
-        #x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
-        #x = tf.keras.layers.LeakyReLU()(x)
-        #x = CustomReshapeLayer(self.INPUT_SIZE)(x)
-        #x_T = tf.keras.layers.Permute((2,1))(x)
-        #diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
-        #x = tf.keras.layers.Add()([x, x_T, diag])
-        #x = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
-        #x = tf.keras.layers.concatenate([x, tar])
+        embedding = self.discriminator_embedding
         #Patch-GAN (Isola et al.)
-        d = twoD_conversion(inp)
+        d = embedding(inp)
         d = tf.keras.layers.Concatenate()([d, tar])
         if self.INPUT_SIZE > 64:
             #downsample and symmetrize 1 
@@ -301,8 +308,8 @@ class HiCGAN():
         d_T = tf.keras.layers.Permute((2,1,3))(d)
         d = tf.keras.layers.Add()([d, d_T])
         d = tf.keras.layers.Lambda(lambda z: 0.5*z)(d)
-        d = tf.keras.layers.Activation("sigmoid")(d)
-        return tf.keras.Model(inputs=[inp, tar], outputs=d)
+        #d = tf.keras.layers.Activation("sigmoid")(d) #sigmoid will be done in the loss function itself
+        return tf.keras.Model(inputs=[inp, tar], outputs=d, name="Discriminator")
 
     def discriminator_loss(self, disc_real_output, disc_generated_output):
         real_loss = self.loss_object(tf.ones_like(disc_real_output), disc_real_output)
@@ -331,11 +338,10 @@ class HiCGAN():
                                                 self.generator.trainable_variables))
         self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
                                                     self.discriminator.trainable_variables))
-
         return gen_total_loss, disc_loss, disc_real_loss, disc_gen_loss
 
     @tf.function
-    def validationStep(self, input_image, target, epoch):
+    def validationStep(self, input_image, target):
         gen_output = self.generator(input_image, training=True)
 
         disc_real_output = self.discriminator([input_image, target], training=True)
@@ -343,7 +349,6 @@ class HiCGAN():
 
         gen_total_loss, _, _ = self.generator_loss(disc_generated_output, gen_output, target)
         disc_loss, _, _ = self.discriminator_loss(disc_real_output, disc_generated_output)
-
         return gen_total_loss, disc_loss
 
     def generate_images(self, model, test_input, tar, epoch: int):
@@ -363,12 +368,6 @@ class HiCGAN():
         del fig1, axs1
 
     def fit(self, train_ds, epochs, test_ds, steps_per_epoch: int):
-        gen_loss_train = []
-        gen_loss_val = []
-        disc_loss_train =[]
-        disc_loss_real_train = []
-        disc_loss_gen_train = []
-        disc_loss_val = []
         for epoch in range(epochs):
             #generate sample output
             if epoch % self.example_plot_frequency == 0:
@@ -377,68 +376,75 @@ class HiCGAN():
             # Train
             train_pbar = tqdm(train_ds.enumerate(), total=steps_per_epoch)
             train_pbar.set_description("Epoch {:05d}".format(epoch+1))
-            gen_loss_batches = []
-            disc_loss_batches = []
-            disc_real_loss_batches = []
-            disc_gen_loss_batches = []
+            train_samples_in_epoch = 0
             for _, (input_image, target) in train_pbar:
-                gen_loss, disc_loss, disc_real_loss, disc_gen_loss = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
-                gen_loss_batches.append(gen_loss)
-                disc_loss_batches.append(disc_loss)
-                disc_real_loss_batches.append(disc_real_loss)
-                disc_gen_loss_batches.append(disc_gen_loss)
-                if epoch == 0:
-                    train_pbar.set_postfix( {"loss": "{:.4f}".format(gen_loss)} )
-                else:
-                    train_pbar.set_postfix( {"train loss": "{:.4f}".format(gen_loss),
-                                             "val loss": "{:.4f}".format(gen_loss_val[-1])} )
-            gen_loss_train.append(np.mean(gen_loss_batches))
-            disc_loss_train.append(np.mean(disc_loss_batches))
-            disc_loss_real_train.append(np.mean(disc_real_loss_batches))
-            disc_loss_gen_train.append(np.mean(disc_gen_loss_batches))
-            del gen_loss_batches, disc_loss_batches, disc_real_loss_batches, disc_gen_loss_batches
+                train_samples_in_epoch += 1
+                gen_loss, disc_loss_total, disc_loss_real, disc_loss_fake = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
+                self.__disc_train_loss_true_batches.append(disc_loss_real)
+                self.__disc_train_loss_fake_batches.append(disc_loss_fake)
+                self.__gen_train_loss_batches.append(gen_loss)
+                train_bar_postfixDict= {"g": "{:.4f}".format(self.__gen_train_loss_batches[-1]),
+                                         "dt": "{:.3f}".format(self.__disc_train_loss_true_batches[-1]),
+                                         "df": "{:.3f}".format(self.__disc_train_loss_fake_batches[-1])}
+                if len(self.__gen_val_loss_epochs) > 0:
+                    train_bar_postfixDict["v"] = "{:.3f}".format(self.__gen_val_loss_epochs[-1])
+                train_pbar.set_postfix( train_bar_postfixDict )
+                self.__batch_counter += 1
+            self.__gen_train_loss_epochs.append(np.mean(self.__gen_train_loss_batches[-train_samples_in_epoch:]))
+            self.__disc_train_loss_true_epochs.append(np.mean(self.__disc_train_loss_true_batches[-train_samples_in_epoch:]))
+            self.__disc_train_loss_fake_epochs.append(np.mean(self.__disc_train_loss_fake_batches[-train_samples_in_epoch:]))
+
             # Validation
-            gen_loss_batches = []
-            disc_loss_batches = []
+            validation_samples_in_epoch = 0
             for input_image, target in test_ds:
-                gen_loss, disc_loss = self.validationStep(input_image["factorData"], target["out_matrixData"], epoch)
-                gen_loss_batches.append(gen_loss)
-                disc_loss_batches.append(disc_loss)
-            gen_loss_val.append(np.mean(gen_loss_batches))
-            disc_loss_val.append(np.mean(disc_loss_batches))
-            del gen_loss_batches, disc_loss_batches, train_pbar
-            
-            # saving (checkpoint) the model every 20 epochs
+                gen_loss_val, disc_loss_val = self.validationStep(input_image["factorData"], target["out_matrixData"])
+                self.__gen_val_loss_batches.append(gen_loss_val)
+                self.__disc_val_loss_batches.append(disc_loss_val)
+                validation_samples_in_epoch += 1
+            self.__disc_val_loss_epochs.append(np.mean(self.__disc_val_loss_batches[-validation_samples_in_epoch:]))
+            self.__gen_val_loss_epochs.append(np.mean(self.__gen_val_loss_batches[-validation_samples_in_epoch:]))
+
+            #count the epoch
+            self.__epoch_counter += 1
+
+            # saving the model every 20 epochs
             if (epoch + 1) % self.progress_plot_frequency == 0:
-                #self.checkpoint.save(file_prefix = self.checkpoint_prefix)
                 #plot loss
-                utils.plotLoss(pGeneratorLossValueLists=[gen_loss_train, gen_loss_val],
-                              pDiscLossValueLists=[disc_loss_train, disc_loss_real_train, disc_loss_gen_train, disc_loss_val],
+                utils.plotLoss(pGeneratorLossValueLists=[self.__gen_train_loss_epochs, self.__gen_val_loss_epochs],
+                              pDiscLossValueLists=[ [sum(x) for x in zip(self.__disc_train_loss_fake_epochs, self.__disc_train_loss_true_epochs)],
+                                                    self.__disc_train_loss_true_epochs, 
+                                                    self.__disc_train_loss_fake_epochs, 
+                                                    self.__disc_val_loss_epochs],
                               pGeneratorLossNameList=["training", "validation"],
                               pDiscLossNameList=["train total", "train real", "train gen.", "valid. total"],
                               pFilename=self.progress_plot_name,
                               useLogscaleList=[True, False])
                 np.savez(os.path.join(self.log_dir, "lossValues_{:05d}.npz".format(epoch)), 
-                                    genLossTrain=gen_loss_train, 
-                                    genLossVal=gen_loss_val, 
-                                    discLossTrain=disc_loss_train, 
-                                    discLossVal=disc_loss_val)
+                                    genLossTrain=self.__gen_train_loss_batches, 
+                                    genLossVal=self.__gen_val_loss_batches, 
+                                    discLossTrain_True=self.__disc_train_loss_true_batches,
+                                    discLossTrain_Fake=self.__disc_train_loss_fake_batches, 
+                                    discLossVal=self.__disc_val_loss_batches)
                 self.generator.save(filepath=os.path.join(self.log_dir, "generator_{:05d}.h5".format(epoch)), save_format="h5")
                 self.discriminator.save(filepath=os.path.join(self.log_dir, "discriminator_{:05d}.h5".format(epoch)), save_format="h5")
-            
+
 
         self.checkpoint.save(file_prefix = self.checkpoint_prefix)
-        utils.plotLoss(pGeneratorLossValueLists=[gen_loss_train, gen_loss_val],
-                       pDiscLossValueLists=[disc_loss_train, disc_loss_real_train, disc_loss_gen_train, disc_loss_val],
-                       pGeneratorLossNameList=["training", "validation"],
-                       pDiscLossNameList=["train total", "train real", "train gen.", "valid. total"],
-                       pFilename=self.progress_plot_name,
-                       useLogscaleList=[True, False])
+        utils.plotLoss(pGeneratorLossValueLists=[self.__gen_train_loss_epochs, self.__gen_val_loss_epochs],
+                              pDiscLossValueLists=[ [sum(x) for x in zip(self.__disc_train_loss_fake_epochs, self.__disc_train_loss_true_epochs)],
+                                                    self.__disc_train_loss_true_epochs, 
+                                                    self.__disc_train_loss_fake_epochs, 
+                                                    self.__disc_val_loss_epochs],
+                              pGeneratorLossNameList=["training", "validation"],
+                              pDiscLossNameList=["train total", "train real", "train gen.", "valid. total"],
+                              pFilename=self.progress_plot_name,
+                              useLogscaleList=[True, False])
         np.savez(os.path.join(self.log_dir, "lossValues_{:05d}.npz".format(epoch)), 
-                                    genLossTrain=gen_loss_train, 
-                                    genLossVal=gen_loss_val, 
-                                    discLossTrain=disc_loss_train, 
-                                    discLossVal=disc_loss_val)
+                                    genLossTrain=self.__gen_train_loss_batches, 
+                                    genLossVal=self.__gen_val_loss_batches, 
+                                    discLossTrain_True=self.__disc_train_loss_true_batches,
+                                    discLossTrain_Fake=self.__disc_train_loss_fake_batches, 
+                                    discLossVal=self.__disc_val_loss_batches)
         self.generator.save(filepath=os.path.join(self.log_dir, "generator_{:05d}.h5".format(epoch)), save_format="h5")
         self.discriminator.save(filepath=os.path.join(self.log_dir, "discriminator_{:05d}.h5".format(epoch)), save_format="h5")
 
