@@ -12,10 +12,11 @@ import utils
 
 class HiCGAN():
     def __init__(self, log_dir: str, 
-                    lambda_pixel: float = 100,
-                    lambda_disc: float = 0.5, 
+                    lambda_pixel: float = 100, #factor for L1/L2 loss
+                    lambda_disc_gan: float = 1.0, #factor for GAN loss in generator
+                    lambda_disc: float = 0.5, #factor for disc loss
                     loss_type_pixel: str = "L1",
-                    tv_weight: float = 1e-10,
+                    tv_weight: float = 1e-10, #factor for TV loss
                     input_size: int = 256,
                     plot_frequency: int = 20,
                     plot_type: str = "png",
@@ -33,9 +34,9 @@ class HiCGAN():
         self.NR_FACTORS = 14
         self.lambda_pixel = lambda_pixel
         self.lambda_disc = lambda_disc
+        self.lambda_disc_gan = lambda_disc_gan
         self.tv_loss_Weight = tv_weight
         self.loss_type_pixel = loss_type_pixel
-        self.loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
         #choose the desired embedding network: DNN (like Farre et al.) or CNN
@@ -255,14 +256,14 @@ class HiCGAN():
 
 
     def generator_loss(self, disc_generated_output, gen_output, target):
-        gan_loss = self.loss_object(tf.ones_like(disc_generated_output), disc_generated_output)
+        gan_loss = tf.reduce_mean( tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(disc_generated_output), logits=disc_generated_output) )
         # mean squared error or mean absolute error
         if self.loss_type_pixel == "L1":
             pixel_loss = tf.reduce_mean(tf.abs(target - gen_output))
         else: 
             pixel_loss = tf.reduce_mean(tf.square(target - gen_output))
         tv_loss = tf.reduce_mean(tf.image.total_variation(gen_output))
-        total_gen_loss = self.lambda_pixel * pixel_loss + self.lambda_disc * gan_loss + self.tv_loss_Weight * tv_loss
+        total_gen_loss = self.lambda_pixel * pixel_loss + self.lambda_disc_gan * gan_loss + self.tv_loss_Weight * tv_loss
         return total_gen_loss, gan_loss, pixel_loss
 
 
@@ -312,9 +313,9 @@ class HiCGAN():
         return tf.keras.Model(inputs=[inp, tar], outputs=d, name="Discriminator")
 
     def discriminator_loss(self, disc_real_output, disc_generated_output):
-        real_loss = self.loss_object(tf.ones_like(disc_real_output), disc_real_output)
-        generated_loss = self.loss_object(tf.zeros_like(disc_generated_output), disc_generated_output)
-        total_disc_loss = real_loss + generated_loss
+        real_loss = tf.reduce_mean( tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(disc_real_output), logits=disc_real_output) )
+        generated_loss = tf.reduce_mean( tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(disc_generated_output), logits=disc_generated_output) )
+        total_disc_loss = self.lambda_disc * (real_loss + generated_loss)
         return total_disc_loss, real_loss, generated_loss
 
 

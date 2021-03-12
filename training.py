@@ -243,6 +243,7 @@ def training(trainmatrices,
         pretrainedintromodel = ""
     hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, 
                                 lambda_pixel=lossweightpixel,
+                                lambda_disc_gan=1.0,
                                 lambda_disc=lossweightdisc, 
                                 loss_type_pixel=losstypepixel, 
                                 tv_weight=lossweighttv, 
