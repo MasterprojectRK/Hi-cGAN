@@ -172,7 +172,7 @@ class HiCGAN():
     def Generator(self):
         inputs = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE,self.NR_FACTORS], name="factorData")
 
-        twoD_conversion = self.generator_embedding
+        embedding = self.generator_embedding
         #the downsampling part of the network, defined for 256x256 images
         down_stack = [
             HiCGAN.downsample(64, 4, apply_batchnorm=False), # (bs, 128, 128, 64)
@@ -213,7 +213,7 @@ class HiCGAN():
                                                 kernel_initializer=initializer) # (bs, 256, 256, 3)
 
         x = inputs
-        x = twoD_conversion(x)
+        x = embedding(x)
 
         # Downsampling through the model
         skips = []
@@ -239,34 +239,27 @@ class HiCGAN():
 
 
     def generator_loss(self, disc_generated_output, gen_output, target):
-        gan_loss = self.loss_object(tf.ones_like(disc_generated_output), disc_generated_output)
+        # loss from discriminator; want it to see all images as real
+        gan_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(disc_generated_output), logits=disc_generated_output)
+        gan_loss = tf.reduce_mean(gan_loss)
         # mean squared error or mean absolute error
         if self.loss_type_pixel == "L1":
             pixel_loss = tf.reduce_mean(tf.abs(target - gen_output))
         else: 
             pixel_loss = tf.reduce_mean(tf.square(target - gen_output))
-        tv_loss = tf.reduce_mean(tf.image.total_variation(gen_output))
-        total_gen_loss = self.lambda_pixel * pixel_loss + self.lambda_disc * gan_loss + self.tv_loss_Weight * tv_loss
+        #tv loss for edge-aware denoising
+        tv_loss = tf.reduce_sum(tf.image.total_variation(gen_output))
+        total_gen_loss = self.lambda_pixel * pixel_loss + gan_loss + self.tv_loss_Weight * tv_loss
         return total_gen_loss, gan_loss, pixel_loss
 
 
     def Discriminator(self):
         initializer = tf.random_normal_initializer(0., 0.02)
-
         inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
         tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
-        twoD_conversion = self.discriminator_embedding
-        #x = Flatten()(inp)
-        #x = Dense(units = self.INPUT_SIZE*(self.INPUT_SIZE+1)//2)(x)
-        #x = tf.keras.layers.LeakyReLU()(x)
-        #x = CustomReshapeLayer(self.INPUT_SIZE)(x)
-        #x_T = tf.keras.layers.Permute((2,1))(x)
-        #diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
-        #x = tf.keras.layers.Add()([x, x_T, diag])
-        #x = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
-        #x = tf.keras.layers.concatenate([x, tar])
+        embedding = self.discriminator_embedding
         #Patch-GAN (Isola et al.)
-        d = twoD_conversion(inp)
+        d = embedding(inp)
         d = tf.keras.layers.Concatenate()([d, tar])
         if self.INPUT_SIZE > 64:
             #downsample and symmetrize 1 
@@ -310,29 +303,38 @@ class HiCGAN():
         total_disc_loss = real_loss + generated_loss
         return total_disc_loss, real_loss, generated_loss
 
+    def dd_loss(self, target_output, disc_output):
+        loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=target_output, logits=disc_output)
+        loss = self.lambda_disc * tf.reduce_mean(loss)
+        return loss
 
     @tf.function
     def train_step(self, input_image, target, epoch):
-        with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+        with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape_real, tf.GradientTape() as disc_tape_fake:
             gen_output = self.generator(input_image, training=True)
 
             disc_real_output = self.discriminator([input_image, target], training=True)
-            disc_generated_output = self.discriminator([input_image, gen_output], training=True)
+            disc_fake_output = self.discriminator([input_image, gen_output], training=True)
 
-            gen_total_loss, _, _ = self.generator_loss(disc_generated_output, gen_output, target)
-            disc_loss, disc_real_loss, disc_gen_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
+            gen_total_loss, _, _ = self.generator_loss(disc_fake_output, gen_output, target)
+            disc_real_loss = self.dd_loss(target_output=tf.ones_like(disc_real_output), disc_output = disc_real_output )
+            disc_fake_loss = self.dd_loss(target_output=tf.zeros_like(disc_fake_output), disc_output = disc_fake_output)
 
+        discriminator_gradients_real = disc_tape_real.gradient(disc_real_loss,
+                                                    self.discriminator.trainable_variables)
+        discriminator_gradients_fake = disc_tape_fake.gradient(disc_fake_loss,
+                                                    self.discriminator.trainable_variables)
         generator_gradients = gen_tape.gradient(gen_total_loss,
                                                 self.generator.trainable_variables)
-        discriminator_gradients = disc_tape.gradient(disc_loss,
-                                                    self.discriminator.trainable_variables)
 
+        self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients_real,
+                                                    self.discriminator.trainable_variables))
+        self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients_fake,
+                                                    self.discriminator.trainable_variables))
         self.generator_optimizer.apply_gradients(zip(generator_gradients,
                                                 self.generator.trainable_variables))
-        self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
-                                                    self.discriminator.trainable_variables))
 
-        return gen_total_loss, disc_loss, disc_real_loss, disc_gen_loss
+        return gen_total_loss, disc_real_loss + disc_fake_loss, disc_real_loss, disc_fake_loss
 
     @tf.function
     def validationStep(self, input_image, target, epoch):
@@ -342,7 +344,9 @@ class HiCGAN():
         disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
         gen_total_loss, _, _ = self.generator_loss(disc_generated_output, gen_output, target)
-        disc_loss, _, _ = self.discriminator_loss(disc_real_output, disc_generated_output)
+        disc_loss_real = self.dd_loss(target_output=tf.ones_like(disc_real_output), disc_output=disc_real_output)
+        disc_loss_fake = self.dd_loss(target_output=tf.zeros_like(disc_generated_output), disc_output=disc_generated_output)
+        disc_loss = disc_loss_real + disc_loss_fake
 
         return gen_total_loss, disc_loss
 
@@ -356,8 +360,8 @@ class HiCGAN():
 
         fig1, axs1 = plt.subplots(1,len(display_list), figsize=(15,15))
         for i in range(len(display_list)):
-            axs1[i].imshow(display_list[i] * 0.5 + 0.5)
-            axs1[i].set_title(titleList[i])
+            _ = axs1[i].imshow(display_list[i] * 0.5 + 0.5)
+            _ = axs1[i].set_title(titleList[i])
         fig1.savefig(figname)
         plt.close(fig1)
         del fig1, axs1
