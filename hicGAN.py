@@ -38,7 +38,8 @@ class HiCGAN():
         self.tv_loss_Weight = tv_weight
         self.loss_type_pixel = loss_type_pixel
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Generator")
-        self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
+        #self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=adam_beta_1, name="Adam_Discriminator")
+        self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=1e-6, beta_1=adam_beta_1, name="Adam_Discriminator")
         #choose the desired embedding network: DNN (like Farre et al.) or CNN
         if embedding_model_type not in ["DNN", "CNN", "mixed"]:
             msg = "Embedding {:s} not supported".format(embedding_model_type)
