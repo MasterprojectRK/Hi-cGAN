@@ -382,7 +382,7 @@ class HiCGAN():
             train_samples_in_epoch = 0
             for _, (input_image, target) in train_pbar:
                 train_samples_in_epoch += 1
-                gen_loss, disc_loss_total, disc_loss_real, disc_loss_fake = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
+                gen_loss, _, disc_loss_real, disc_loss_fake = self.train_step(input_image["factorData"], target["out_matrixData"], epoch)
                 self.__disc_train_loss_true_batches.append(disc_loss_real)
                 self.__disc_train_loss_fake_batches.append(disc_loss_fake)
                 self.__gen_train_loss_batches.append(gen_loss)
@@ -414,7 +414,7 @@ class HiCGAN():
             if (epoch + 1) % self.progress_plot_frequency == 0:
                 #plot loss
                 utils.plotLoss(pGeneratorLossValueLists=[self.__gen_train_loss_epochs, self.__gen_val_loss_epochs],
-                              pDiscLossValueLists=[ [sum(x) for x in zip(self.__disc_train_loss_fake_epochs, self.__disc_train_loss_true_epochs)],
+                              pDiscLossValueLists=[ [self.loss_weight_discriminator*sum(x) for x in zip(self.__disc_train_loss_fake_epochs, self.__disc_train_loss_true_epochs)],
                                                     self.__disc_train_loss_true_epochs, 
                                                     self.__disc_train_loss_fake_epochs, 
                                                     self.__disc_val_loss_epochs],
@@ -434,7 +434,7 @@ class HiCGAN():
 
         self.checkpoint.save(file_prefix = self.checkpoint_prefix)
         utils.plotLoss(pGeneratorLossValueLists=[self.__gen_train_loss_epochs, self.__gen_val_loss_epochs],
-                              pDiscLossValueLists=[ [sum(x) for x in zip(self.__disc_train_loss_fake_epochs, self.__disc_train_loss_true_epochs)],
+                              pDiscLossValueLists=[ [self.loss_weight_discriminator*sum(x) for x in zip(self.__disc_train_loss_fake_epochs, self.__disc_train_loss_true_epochs)],
                                                     self.__disc_train_loss_true_epochs, 
                                                     self.__disc_train_loss_fake_epochs, 
                                                     self.__disc_val_loss_epochs],
