@@ -52,11 +52,11 @@ import records
              type=click.Choice(["L1", "L2"]), 
              default="L1", show_default=True,
              help="Type of per-pixel loss to use for the generator; choose from L1 (mean abs. error) or L2 (mean squared error)")
-@click.option("--lossWeightTv", "-lvt", required=False,
+@click.option("--lossWeightTv", "-lwt", required=False,
              type=click.FloatRange(min=0.0),
              default=1e-10, show_default=True,
              help="loss weight for Total-Variation-loss of generator; higher value - more smoothing")
-@click.option("--lossWeightAdv", "-lva", required=False,
+@click.option("--lossWeightAdv", "-lwa", required=False,
               type=click.FloatRange(min=1e-10), 
               default=1.0, show_default=True,
               help="loss weight for adversarial loss in generator")
