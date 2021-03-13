@@ -47,7 +47,7 @@ import records
 @click.option("--lossWeightDisc", "-lwd", required=False,
               type=click.FloatRange(min=1e-10),
               default=0.5, show_default=True,
-              help="loss weight for the discriminator error")
+              help="loss weight (multiplicator) for the discriminator loss")
 @click.option("--lossTypePixel", "-ltp", required=False,
              type=click.Choice(["L1", "L2"]), 
              default="L1", show_default=True,
@@ -56,14 +56,22 @@ import records
              type=click.FloatRange(min=0.0),
              default=1e-10, show_default=True,
              help="loss weight for Total-Variation-loss of generator; higher value - more smoothing")
-@click.option("--learningRate", "-lr", required=False,
+@click.option("--lossWeightAdv", "-lva", required=False,
+              type=click.FloatRange(min=1e-10), 
+              default=1.0, show_default=True,
+              help="loss weight for adversarial loss in generator")
+@click.option("--learningRateGen", "-lrg", required=False,
               type=click.FloatRange(min=1e-10, max=1.0), 
               default=2e-5, show_default=True,
-              help="learning rate for Adam optimizer")
+              help="learning rate for Adam optimizer of generator")
+@click.option("--learningRateDisc", "-lrd", required=False,
+              type=click.FloatRange(min=1e-10, max=1.0),
+              default=1e-6, show_default=True,
+              help="learning rate for Adam optimizer of discriminator")
 @click.option("--beta1", "-b1", required=False,
               type=click.FloatRange(min=1e-2, max=1.0),
               default=0.5, show_default=True,
-              help="beta1 parameter for Adam optimizer")
+              help="beta1 parameter for Adam optimizers (gen. and disc.)")
 @click.option("--flipsamples", "-fs", required=False,
              type=bool, default=False, show_default=True,
              help="Flip training matrices and chromatin features (data augmentation)")
@@ -95,9 +103,11 @@ def training(trainmatrices,
              batchsize,
              lossweightpixel,
              lossweightdisc,
+             lossweightadv,
              losstypepixel,
              lossweighttv,
-             learningrate,
+             learningrategen,
+             learningratedisc,
              beta1,
              flipsamples,
              embeddingtype,
@@ -242,13 +252,14 @@ def training(trainmatrices,
     if pretrainedintromodel is None:
         pretrainedintromodel = ""
     hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, 
-                                lambda_pixel=lossweightpixel,
-                                lambda_disc_gan=1.0,
-                                lambda_disc=lossweightdisc, 
+                                loss_weight_pixel=lossweightpixel,
+                                loss_weight_adversarial=lossweightadv,
+                                loss_weight_discriminator=lossweightdisc, 
                                 loss_type_pixel=losstypepixel, 
-                                tv_weight=lossweighttv, 
+                                loss_weight_tv=lossweighttv, 
                                 input_size=windowsize,
-                                learning_rate=learningrate,
+                                learning_rate_generator=learningrategen,
+                                learning_rate_discriminator=learningratedisc,
                                 adam_beta_1=beta1,
                                 plot_type=figuretype,
                                 embedding_model_type=embeddingtype,
