@@ -90,6 +90,10 @@ import records
              type=click.IntRange(min=10), 
              default=2000, show_default=True,
              help="Approx. size (number of samples) of the tfRecords used in the data pipeline for training. Lower values = less memory consumption, but maybe longer runtime")
+@click.option("--plotFrequency", "-pfreq", required=False,
+             type=click.IntRange(min=1),
+             default=10, show_default=True,
+             help="Update loss over epoch plots after this number of epochs")
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -113,7 +117,8 @@ def training(trainmatrices,
              embeddingtype,
              pretrainedintromodel,
              figuretype,
-             recordsize):
+             recordsize,
+             plotfrequency):
 
     #few constants
     windowsize = int(windowsize)
@@ -262,6 +267,7 @@ def training(trainmatrices,
                                 learning_rate_discriminator=learningratedisc,
                                 adam_beta_1=beta1,
                                 plot_type=figuretype,
+                                plot_frequency=plotfrequency,
                                 embedding_model_type=embeddingtype,
                                 pretrained_model_path=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
