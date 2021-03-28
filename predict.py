@@ -66,6 +66,7 @@ def prediction(trainedmodel,
         print(msg)
         return #nothing to do
     container0 = testdataContainerList[0]
+    nr_factors = container0.nr_factors
     tfRecordFilenames = []
     sampleSizeList = []
     for container in testdataContainerList:
@@ -77,7 +78,7 @@ def prediction(trainedmodel,
         sampleSizeList.append( int( np.ceil(container.getNumberSamples() / batchSizeInt) ) )
         container.unloadData() 
 
-    trained_GAN = hicGAN.HiCGAN(log_dir=outfolder)
+    trained_GAN = hicGAN.HiCGAN(log_dir=outfolder, number_factors=nr_factors)
     trained_GAN.loadGenerator(trainedModelPath=trainedmodel)
     predList = []
     for record, container, nr_samples in zip(tfRecordFilenames, testdataContainerList, sampleSizeList):
