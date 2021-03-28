@@ -18,20 +18,23 @@ import utils
               type=str,
               help="Chromosomes for testing. Must be available in all bigwig files")
 @click.option("--outfolder", "-o", required=False,
-              type=click.Path(exists=True, writable=True),
+              type=click.Path(exists=True, writable=True, file_okay=False),
               default="./", show_default=True,
               help="Output path for predicted coolers")
 @click.option("--multiplier", "-mul", required=False,
              type=click.IntRange(min=1), 
              default=10, show_default=True)
+@click.option("--binsize", "-b", required=True,
+              type=click.IntRange(min=1000), 
+              help="bin size for binning the chromatin features")
 @click.command()
 def prediction(trainedmodel, 
                 testchrompath,
                 testchroms,
                 outfolder,
-                multiplier
+                multiplier,
+                binsize
                 ):
-    binSizeInt = 25000
     scalefactors = True
     clampfactors = False
     scalematrix = True
@@ -52,7 +55,7 @@ def prediction(trainedmodel,
         testdataContainerList.append(containerCls(chromosome=chrom,
                                                   matrixfilepath=None,
                                                   chromatinFolder=testchrompath,
-                                                  binsize=binSizeInt)) 
+                                                  binsize=binsize)) 
     #define the load params for the containers
     loadParams = {"scaleFeatures": scalefactors,
                   "clampFeatures": clampfactors,
@@ -73,9 +76,14 @@ def prediction(trainedmodel,
         container.loadData(**loadParams)
         if not container0.checkCompatibility(container):
             msg = "Aborting. Incompatible data"
+            raise SystemExit(msg)
         tfRecordFilenames.append(container.writeTFRecord(pOutfolder=outfolder,
                                                         pRecordSize=None)[0]) #list with 1 entry
         sampleSizeList.append( int( np.ceil(container.getNumberSamples() / batchSizeInt) ) )
+    
+    nr_factors = container0.nr_factors
+    #data is no longer needed, unload it
+    for container in testdataContainerList:
         container.unloadData() 
 
     trained_GAN = hicGAN.HiCGAN(log_dir=outfolder, number_factors=nr_factors)
@@ -100,7 +108,7 @@ def prediction(trainedmodel,
 
     matrixname = os.path.join(outfolder, "predMatrix.cool")
     utils.writeCooler(pMatrixList=predList, 
-                      pBinSizeInt=binSizeInt, 
+                      pBinSizeInt=binsize, 
                       pOutfile=matrixname, 
                       pChromosomeList=chromNameList)
 
