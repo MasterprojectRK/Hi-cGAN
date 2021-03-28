@@ -257,6 +257,7 @@ def training(trainmatrices,
     if pretrainedintromodel is None:
         pretrainedintromodel = ""
     hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, 
+                                number_factors=nr_factors,
                                 loss_weight_pixel=lossweightpixel,
                                 loss_weight_adversarial=lossweightadv,
                                 loss_weight_discriminator=lossweightdisc, 

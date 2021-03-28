@@ -13,6 +13,7 @@ import utils
 
 class HiCGAN():
     def __init__(self, log_dir: str, 
+                    number_factors: int,
                     loss_weight_pixel: float = 100, #factor for L1/L2 loss, like Isola et al. 2017
                     loss_weight_adversarial: float = 1.0, #factor for adversarial loss in generator
                     loss_weight_discriminator: float = 0.5, #factor for disc loss, like Isola et al. 2017
@@ -30,10 +31,10 @@ class HiCGAN():
 
         self.OUTPUT_CHANNELS = 1
         self.INPUT_CHANNELS = 1
-        self.INPUT_SIZE = 256
+        self.input_size = 256
         if input_size in [64,128,256]:
-            self.INPUT_SIZE = input_size
-        self.NR_FACTORS = 14
+            self.input_size = input_size
+        self.number_factors = number_factors
         self.loss_weight_pixel = loss_weight_pixel
         self.loss_weight_discriminator = loss_weight_discriminator
         self.loss_weight_adversarial = loss_weight_adversarial
@@ -90,7 +91,7 @@ class HiCGAN():
         self.__batch_counter = 0
 
     def cnn_embedding(self, nr_filters_list=[1024,512,512,256,256,128,128,64], kernel_width_list=[4,4,4,4,4,4,4,4], apply_dropout: bool = False):  
-        inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
+        inputs = tf.keras.layers.Input(shape=(3*self.input_size, self.number_factors))
         #add 1D convolutions
         x = inputs
         for i, (nr_filters, kernelWidth) in enumerate(zip(nr_filters_list, kernel_width_list)):
@@ -108,7 +109,7 @@ class HiCGAN():
                 x = Dropout(0.5)(x)
             x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
         #make the shape of a square matrix
-        x = Conv1D(filters=self.INPUT_SIZE, 
+        x = Conv1D(filters=self.input_size, 
                     strides=3, 
                     kernel_size=4, 
                     data_format="channels_last", 
@@ -119,14 +120,14 @@ class HiCGAN():
         x = tf.keras.layers.Add()([x, x_T])
         x = tf.keras.layers.Lambda(lambda z: 0.5*z)(x) #add transpose and divide by 2
         #reshape the matrix into a 2D grayscale image
-        x = tf.keras.layers.Reshape((self.INPUT_SIZE,self.INPUT_SIZE,self.INPUT_CHANNELS))(x)
+        x = tf.keras.layers.Reshape((self.input_size,self.input_size,self.INPUT_CHANNELS))(x)
         model = tf.keras.Model(inputs=inputs, outputs=x, name="CNN-embedding")
         #model.build(input_shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
         #model.summary()
         return model
 
     def dnn_embedding(self, pretrained_model_path : str = ""):
-        inputs = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
+        inputs = tf.keras.layers.Input(shape=(3*self.input_size, self.number_factors))
         x = Conv1D(filters=1,
                     kernel_size=1,
                     strides=1, 
@@ -139,7 +140,7 @@ class HiCGAN():
             x = Dense(nr_neurons, activation="relu", kernel_regularizer="l2", name=layerName)(x)
             layerName = "dropout_" + str(i+1)
             x = Dropout(0.1, name=layerName)(x)
-        nr_output_neurons = (self.INPUT_SIZE * (self.INPUT_SIZE + 1)) // 2
+        nr_output_neurons = (self.input_size * (self.input_size + 1)) // 2
         x = Dense(nr_output_neurons, activation="relu",kernel_regularizer="l2", name="dense_out")(x)
         dnn_model = tf.keras.Model(inputs=inputs, outputs=x)
         if pretrained_model_path != "":
@@ -150,15 +151,15 @@ class HiCGAN():
                 msg = str(e)
                 msg += "\nCould not load the weights of pre-trained model"
                 print(msg)
-        inputs2 = tf.keras.layers.Input(shape=(3*self.INPUT_SIZE, self.NR_FACTORS))
+        inputs2 = tf.keras.layers.Input(shape=(3*self.input_size, self.number_factors))
         x = dnn_model(inputs2)
         #place the upper triangular part from dnn model into full matrix
-        x = CustomReshapeLayer(self.INPUT_SIZE)(x)
+        x = CustomReshapeLayer(self.input_size)(x)
         #symmetrize the output
         x_T = tf.keras.layers.Permute((2,1))(x)
         diag = tf.keras.layers.Lambda(lambda z: -1*tf.linalg.band_part(z, 0, 0))(x)
         x = tf.keras.layers.Add()([x, x_T, diag])
-        out = tf.keras.layers.Reshape((self.INPUT_SIZE, self.INPUT_SIZE, self.INPUT_CHANNELS))(x)
+        out = tf.keras.layers.Reshape((self.input_size, self.input_size, self.INPUT_CHANNELS))(x)
         dnn_embedding = tf.keras.Model(inputs=inputs2, outputs=out, name="DNN-embedding")
         return dnn_embedding
 
@@ -189,7 +190,7 @@ class HiCGAN():
 
 
     def Generator(self):
-        inputs = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE,self.NR_FACTORS], name="factorData")
+        inputs = tf.keras.layers.Input(shape=[3*self.input_size,self.number_factors], name="factorData")
 
         twoD_conversion = self.generator_embedding
         #the downsampling part of the network, defined for 256x256 images
@@ -204,9 +205,9 @@ class HiCGAN():
             HiCGAN.downsample(512, 4, apply_batchnorm=False), # (bs, 1, 1, 512)
         ]
         #if the input images are smaller, leave out some layers accordingly
-        if self.INPUT_SIZE < 256:
+        if self.input_size < 256:
             down_stack = down_stack[:-2] + down_stack[-1:]
-        if self.INPUT_SIZE < 128:
+        if self.input_size < 128:
             down_stack = down_stack[:-2] + down_stack[-1:]
 
         #the upsampling portion of the generator, designed for 256x256 images
@@ -220,9 +221,9 @@ class HiCGAN():
             HiCGAN.upsample(64, 4), # (bs, 128, 128, 128)
         ]
         #for smaller images, take layers away, otherwise downsampling won't work
-        if self.INPUT_SIZE < 256:
+        if self.input_size < 256:
             up_stack = up_stack[:2] + up_stack[3:]
-        if self.INPUT_SIZE < 128:
+        if self.input_size < 128:
             up_stack = up_stack[:2] + up_stack[3:]
 
         initializer = tf.random_normal_initializer(0., 0.02)
@@ -272,13 +273,13 @@ class HiCGAN():
     def Discriminator(self):
         initializer = tf.random_normal_initializer(0., 0.02)
 
-        inp = tf.keras.layers.Input(shape=[3*self.INPUT_SIZE, self.NR_FACTORS], name='input_image')
-        tar = tf.keras.layers.Input(shape=[self.INPUT_SIZE, self.INPUT_SIZE, self.OUTPUT_CHANNELS], name='target_image')
+        inp = tf.keras.layers.Input(shape=[3*self.input_size, self.number_factors], name='input_image')
+        tar = tf.keras.layers.Input(shape=[self.input_size, self.input_size, self.OUTPUT_CHANNELS], name='target_image')
         embedding = self.discriminator_embedding
         #Patch-GAN (Isola et al.)
         d = embedding(inp)
         d = tf.keras.layers.Concatenate()([d, tar])
-        if self.INPUT_SIZE > 64:
+        if self.input_size > 64:
             #downsample and symmetrize 1 
             d = HiCGAN.downsample(64, 4, False)(d) # (bs, inp.size/2, inp.size/2, 64)
             d_T = tf.keras.layers.Permute((2,1,3))(d)
@@ -485,7 +486,7 @@ class HiCGAN():
         '''
         try:
             trainedModel = tf.keras.models.load_model(filepath=trainedModelPath, 
-                                                  custom_objects={"CustomReshapeLayer": CustomReshapeLayer(self.INPUT_SIZE)})
+                                                  custom_objects={"CustomReshapeLayer": CustomReshapeLayer(self.input_size)})
             self.generator = trainedModel
         except Exception as e:
             msg = str(e)
