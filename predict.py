@@ -27,21 +27,29 @@ import utils
 @click.option("--binsize", "-b", required=True,
               type=click.IntRange(min=1000), 
               help="bin size for binning the chromatin features")
+@click.option("--batchsize", "-bs", required=False,
+              type=click.IntRange(min=1),
+              default=32, show_default=True,
+              help="batchsize for predicting")
+@click.option("--windowsize", "-ws", required=True,
+              type=click.Choice(choices=["64", "128", "256"]),
+              help="windowsize for predicting; must be the same as in trained model. Supported values are 64, 128 and 256")
 @click.command()
 def prediction(trainedmodel, 
                 testchrompath,
                 testchroms,
                 outfolder,
                 multiplier,
-                binsize
+                binsize,
+                batchsize,
+                windowsize
                 ):
     scalefactors = True
     clampfactors = False
     scalematrix = True
-    windowsize = 64
-    flankingsize = windowsize
     maxdist = None
-    batchSizeInt = 32
+    windowsize = int(windowsize)
+    flankingsize = windowsize
 
     paramDict = locals().copy()
         
@@ -79,7 +87,7 @@ def prediction(trainedmodel,
             raise SystemExit(msg)
         tfRecordFilenames.append(container.writeTFRecord(pOutfolder=outfolder,
                                                         pRecordSize=None)[0]) #list with 1 entry
-        sampleSizeList.append( int( np.ceil(container.getNumberSamples() / batchSizeInt) ) )
+        sampleSizeList.append( int( np.ceil(container.getNumberSamples() / batchsize) ) )
     
     nr_factors = container0.nr_factors
     #data is no longer needed, unload it
@@ -95,7 +103,7 @@ def prediction(trainedmodel,
                                             num_parallel_reads=None,
                                             compression_type="GZIP")
         testDs = testDs.map(lambda x: records.parse_function(x, storedFeaturesDict), num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        testDs = testDs.batch(batchSizeInt, drop_remainder=False) #do NOT drop the last batch (maybe incomplete, i.e. smaller, because batch size doesn't integer divide chrom size)
+        testDs = testDs.batch(batchsize, drop_remainder=False) #do NOT drop the last batch (maybe incomplete, i.e. smaller, because batch size doesn't integer divide chrom size)
         #if validationmatrix is not None:
         #    testDs = testDs.map(lambda x, y: x) #drop the target matrices (they are for evaluation)
         testDs = testDs.prefetch(tf.data.experimental.AUTOTUNE)
