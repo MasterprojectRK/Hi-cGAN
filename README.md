@@ -5,9 +5,11 @@ designed to predict Hi-C contact matrices from one-dimensional
 chromatin feature data, e. g. from ChIP-seq experiments.
 The network architecture is inspired by [pix2pix from Isola et al.](https://doi.org/10.1109/CVPR.2017.632), amended by custom embedding networks to embed the one-dimensional chromatin feature data into grayscale images. 
 
-Hi-cGAN was created in 2020/2021 as part of a master thesis at Albert-Ludwigs university,  Freiburg, Germany.   It is provided under the [GPLv3 license](https://github.com/MasterprojectRK/Hi-cGAN/blob/main/LICENSE).
+Hi-cGAN was created in 2020/2021 as part of a master thesis at Albert-Ludwigs university, Freiburg, Germany. It is provided under the [GPLv3 license](https://github.com/MasterprojectRK/Hi-cGAN/blob/main/LICENSE).
 
 ## Installation
+
+Hi-cGAN has been designed for Linux operating systems (tested under Ubuntu 20.04 and CentOS 7.9.2009). Other operating systems are not supported and probably won't work.
 
 Simply `git clone` this repository into an empty folder of your choice.
 It is recommended to use conda or another package manager to install
@@ -29,7 +31,8 @@ tensorflow-gpu | 2.2.0
 tqdm | 4.50.2
 
 Other versions *might* work, but are untested and might cause dependency
-conflicts. Using tensorflow without GPU support is possible, but will be very slow and is thus not recommended.
+conflicts. Updating to tensorflow 2.3.x should be possible but has not been tested. Using tensorflow without GPU support is possible, but will be very slow and is thus not recommended. 
+
 
 ## Input data requirements
 * Hi-C matrix / matrices in cooler format for training.   
@@ -57,69 +60,128 @@ Hi-cGAN is using a sliding window approach to generate training samples (and tes
 
 Synopsis: `python training.py [parameters and options]`  
 Parameters / Options:  
-* --trainmatrices, -tm [required]  
-Hi-C matrices for training. Must be in cooler format. Use this option multiple times to specify more than one matrix (e.g. `-tm matrix1.cool -tm matrix2.cool`). First matrix belongs to first training chromatin feature path and so on, see below.
-* --trainChroms, -tchroms [required]  
-Chromosomes for training. Specify without leading "chr" and separated by spaces,
-e.g. "1 3 5 11". These chromosomes must be present in all train matrices.
-* --trainChromPaths, -tcp [required]  
-Path where chromatin features for training reside.
-The program will look for bigwig files in this folder, subfolders are not considered.
-Specify one trainChromPath for each training matrix, in the desired order,
-see above.
-Note that the chromatin features for training and prediction must have the same names. 
-* --valMatrices, -vm, [required]  
-Hi-C matrices for validation. Must be in cooler format. Use this option multiple times to specify more than one matrix.
-* --valChroms, -vchroms [required]  
-Same as trainChroms, just for validation
-* --valChromPaths, -vcp [required]  
-Same as trainChromPaths, just for validation
-* --windowsize, -ws [required]  
-Windowsize in bins for submatrices in sliding window approach. 64, 128 and 256 are supported. If the matrix has a bin size of 5kbp, then a windowsize of 64  corresponds to an actual windowsize of 64*5kbp = 320kbp 
-Default: 64.
-* --outfolder, -o [required]  
-Folder where output will be stored.
-Must be writable and have several 100s of MB of free storage space.
-* --epochs, -ep [required]  
-Number of epochs for training. 
-* --batchsize, -bs [required]  
-Batch size for training. Choose integer between 1 and 256. 
-Mind the memory limits of your GPU; in a test environment with 15GB GPU memory, batchsizes 32,4,2 were safely within limits for windowsizes 64,128,256, respectively.
-* --lossWeightPixel, -lwp  
-Loss weight for the L1 or L2 loss in the generator. 
-Floating point value, default: 100.
-* --lossWeightDisc, -lwd  
-loss weight for the discriminator error, floating point value, default: 0.5
-* --lossTypePixel, -ltp  
-Type of per-pixel loss to use for the generator; choose from L1 (mean abs. error) or L2 (mean squared error). Default: L1.
-* --lossWeightTv, -lwt  
-loss weight for Total-Variation-loss of generator; higher value - more smoothing.
-Default: 1e-10.
-* --lossWeightAdv, -lwa   
-loss weight for adversarial loss in the generator.
-Default: 1.0
-* --learningRateGen, -lrg  
-Learning rate for the Adam optimizer of the Generator.
-Default: 2e-5.
-* --learningRateDisc, -lrd
-Learning rate for the Adam optimizer of the Discriminator.
-Default: 1e-6
-* --beta1, -b1  
-beta1 parameter for the Adam optimizers (Generator and Discriminator). Default 0.5.
-* --flipsamples, -fs  
-Flip training matrices and chromatin features (data augmentation). Default: False.
-* --embeddingType, -emb   
-Type of embedding to use for generator and discriminator. 
-Choose from 'CNN' (convolutional neural network), 'DNN' (dense neural network by [Farré et al.](https://doi.org/10.1186/s12859-018-2286-z)), or 'mixed' (Generator - CNN, Discriminator - DNN).
-Default: CNN
-* --pretrainedIntroModel, -ptm  
-Undocumented, developer use only.
-* --figuretype, -ft  
-Figure type for all plots, choose from png, pdf, svg. Default: png.
-* --recordsize, -rs  
-Approx. size (number of samples) of the tfRecords used in the data pipeline for training. Can be tweaked to balance the load between RAM / GPU / CPU. Default: 2000. 
-* --plotFrequency, -pfreq   
-Update and save loss over epoch plots after this number of epochs 
+- --trainmatrices | -tm 
+  - required  
+  - Hi-C matrices for training 
+  - must be in cooler format 
+  - use this option multiple times to specify more than one matrix (e.g. `-tm matrix1.cool -tm matrix2.cool`)
+  - first matrix belongs to first training chromatin feature path and so on, see below
+- --trainChroms | -tchroms 
+  - required  
+  - chromosomes for training
+  - specify without leading "chr" and separated by spaces,
+e.g. "1 3 5 11" 
+  - these chromosomes must be present in all train matrices
+- --trainChromPaths | -tcp 
+  - required
+  - path where chromatin features for training reside
+  - program will look for bigwig files in this folder, subfolders are not considered
+  - file extension must be "bigwig", "bigWig" or "bw"
+  - specify one trainChromPath for each training matrix, in the desired order
+  - chromatin features for training and prediction must have the same base names 
+- --valMatrices | -vm 
+  - required  
+  - Hi-C matrices for validation
+  - must be in cooler format. 
+  - use this option multiple times to specify more than one matrix
+- --valChroms | -vchroms 
+  - required  
+  - same as trainChroms, just for validation
+- --valChromPaths | -vcp 
+  - required
+  - same as trainChromPaths, just for validation
+- --windowsize | -ws  
+  - required
+  - window size in bins for submatrices in sliding window approach 
+  - choose from 64, 128, 256 
+  - default: 64
+  - choose reasonable value according to matrix bin size
+  - if the matrix has a bin size of 5kbp, then a windowsize of 64 corresponds to an actual windowsize of 64*5kbp = 320kbp
+- --outfolder | -o 
+  - required
+  - folder where output will be stored
+  - must be writable and have several 100s of MB of free storage space
+- --epochs | -ep 
+  - required
+  - number of epochs for training 
+- --batchsize | -bs 
+  - required  
+  - batch size for training
+  - integer between 1 and 256
+  - default: 32 
+  - mind the memory limits of your GPU
+  - in a test environment with 15GB GPU memory, batchsizes 32,4,2 were safely within limits for windowsizes 64,128,256, respectively
+- --lossWeightPixel | -lwp 
+  - optional 
+  - loss weight for the L1 or L2 loss in the generator
+  - float >= 1e-10
+  - default: 100.0 
+- --lossWeightDisc | -lwd  
+  - optional
+  - loss weight for the discriminator error
+  - float >= 1e-10
+  - default: 0.5
+- --lossTypePixel | -ltp 
+  - optional 
+  - type of per-pixel loss to use for the generator
+  - choose from "L1" (mean abs. error) or "L2" (mean squared error)
+  - default: L1
+- --lossWeightTv | -lwt 
+  - optional 
+  - loss weight for Total-Variation-loss of generator
+  - float >= 0.0
+  - default: 1e-10
+  - higher value - more smoothing
+- --lossWeightAdv | -lwa   
+  - optional
+  - loss weight for adversarial loss in the generator
+  - float >= 1e-10
+  - default: 1.0
+- --learningRateGen | -lrg  
+  - optional
+  - learning rate for the Adam optimizer of the generator
+  - float in 1e-10...1.0
+  - default: 2e-5
+- --learningRateDisc | -lrd
+  - optional
+  - learning rate for the Adam optimizer of the discriminator
+  - float in 1e-10...1.0
+  - default: 1e-6
+- --beta1 | -b1
+  - optional 
+  - beta1 parameter for the Adam optimizers (generator and discriminator)
+  - float in 1e-2...1.0  
+  - default 0.5.
+- --flipsamples | -fs 
+  - optional
+  - flip training matrices and chromatin features (data augmentation)
+  - boolean
+  - default: False
+- --embeddingType | -emb 
+  - optional  
+  - type of embedding to use for generator and discriminator
+  - choose from 'CNN' (convolutional neural network), 'DNN' (dense neural network by [Farré et al.](https://doi.org/10.1186/s12859-018-2286-z)), or 'mixed' (Generator - CNN, Discriminator - DNN)
+  - default: CNN
+  - CNN is recommended
+- --pretrainedIntroModel | -ptm
+  - optional  
+  - undocumented, developer use only
+- --figuretype | -ft  
+  - optional
+  - figure type for all plots
+  - choose from png, pdf, svg 
+  - default: png
+- --recordsize | -rs
+  - optional
+  - approx. size (number of samples) of the tfRecords used in the data pipeline for training
+  - can be tweaked to balance the load between RAM / GPU / CPU
+  - integer >= 10
+  - default: 2000
+- --plotFrequency | -pfreq
+  - optional
+  - update and save loss over epoch plots after this number of epochs 
+  - integer >= 1
+  - default: 10
 
 Returns: 
 * The following files will be stored in the chosen output path (option `-o`) 
@@ -134,28 +196,46 @@ This script will predict Hi-C matrices using chromatin features and a trained ge
 
 Synopsis: `python predict.py [parameters and options]`  
 Parameters / Options:  
-* --trainedModel, -trm [required]   
-Trained generator model to predict from, h5py format.
-Generated by training.py above.
-* --testChromPath, -tcp [required]  
-Same as trainChromPaths, just for testing / prediction.
-The number and names of bigwig files in this path must be the same as for training.
-* --testChroms, -tchroms [required]  
-Chromosomes for testing (to be predicted). Must be available in all bigwig files.
-Input format is the same as above, e.g. "8 12 21"
-* --outfolder, -o  
-Output path for predicted Hi-C matrices (in cooler format). Default: current path
-* --multiplier, -mul  
-Multiplier for better visualization of results. 
-Integer value greater equal 1, default: 1000.  
-* --binsize, -b [required]   
-Binsize for binning the proteins. Usually equal to binsize for training (but not mandatory)
-* --batchsize, -bs   
-Batchsize for prediction. Same considerations as for training.py hold.
-* --windowsize, -ws  [required]  
-Windowsize for prediction. Must be the same as for training.
-Could in future be detected from trained model.
-For now, just enter the appropriate value (64, 128, 256).
+- --trainedModel | -trm 
+  - required
+  - trained generator model to predict from, h5py format
+  - generated by training.py above
+- --testChromPath | -tcp 
+  - required
+  - Same as trainChromPaths, just for testing / prediction
+  - number and base names of bigwig files in this path must be the same as for training
+- --testChroms | -tchroms
+  - required
+  - chromosomes for testing (to be predicted) 
+  - must be available in all bigwig files
+  - input format: without "chr" and separated by spaces, e.g. "8 12 21"
+- --outfolder | -o
+  - required
+  - output path for predicted Hi-C matrices (in cooler format)
+  - default: current path
+- --multiplier | -mul 
+  - optional
+  - multiplier for better visualization of results
+  - integer >= 1
+  - default: 1000 
+- --binsize | -b 
+  - required
+  - bin size for binning the proteins
+  - usually equal to binsize for training (but not mandatory)
+  - integer >= 1000
+* --batchsize | -bs
+  - optional
+  - batch size for prediction
+  - same considerations as for training.py hold
+  - integer >= 1
+  - default: 32
+- --windowsize | -ws  
+  - required
+  - window size for prediction
+  - choose from 64, 128, 256
+  - must be the same as for training
+  - could in future be detected from trained model
+  - for now, just enter the appropriate value
 
 Returns:  
 * Predicted matrix in cooler format, defined for the specified test chromosomes.  
