@@ -29,6 +29,19 @@ tqdm | 4.50.2
 Other versions *might* work, but are untested and might cause dependency
 conflicts. Using tensorflow without GPU support is possible, but will be very slow and is thus not recommended.
 
+## Input data requirements
+* Hi-C matrix / matrices in cooler format for training.   
+Cooler files must be single resolution (e.g. 25kbp). Multi-resolution files (mcool) are not supported.
+* Chromatin features in bigwig format for training.   
+Chromatin features and Hi-C matrix for training should be from the same cell line
+and must use the same reference genome. File extension must be 'bigwig', 'bigWig' or 'bw'.
+* Chromatin features in bigwig format for test / prediction.
+Chromatin features for prediction must be the same as for training,
+but of course for the cell line to be predicted.
+The basic file names must be the same as for training.
+See example usage for details.
+
+
 ## Usage
 Hi-cGAN consists of two python scripts, training.py and predict.py,
 which will be explained below.
@@ -38,6 +51,8 @@ This script will train the cGAN Generator and Discriminator
 by alternately updating their weights using the Adam optimizer.
 Here, the generator features a combined loss function (L1/L2 loss, adversarial loss, TV Loss) and the discriminator is using standard binary cross entropy loss.  
 
+Hi-cGAN is using a sliding window approach to generate training samples (and test samples, too) from Hi-C matrices and chromatin features on a per-chromosome basis, as proposed by [Farré et al.](https://doi.org/10.1186/s12859-018-2286-z). The most important parameters here are the window size (64, 128 or 256) and the bin size of the Hi-C matrix (e.g. 5kbp, 10kbp, 25kbp).
+
 Synopsis: `python training.py [parameters and options]`  
 Parameters / Options:  
 * --trainmatrices, -tm [required]  
@@ -45,7 +60,6 @@ Hi-C matrices for training. Must be in cooler format. Use this option multiple t
 * --trainChroms, -tchroms [required]  
 Chromosomes for training. Specify without leading "chr" and separated by spaces,
 e.g. "1 3 5 11". These chromosomes must be present in all train matrices.
-Currently, only integer values are supported.
 * --trainChromPaths, -tcp [required]  
 Path where chromatin features for training reside.
 The program will look for bigwig files in this folder, subfolders are not considered.
@@ -59,7 +73,7 @@ Same as trainChroms, just for validation
 * --valChromPaths, -vcp [required]  
 Same as trainChromPaths, just for validation
 * --windowsize, -ws [required]  
-Windowsize for submatrices in sliding window approach. 64, 128 and 256 are supported.
+Windowsize in bins for submatrices in sliding window approach. 64, 128 and 256 are supported. If the matrix has a bin size of 5kbp, then a windowsize of 64  corresponds to an actual windowsize of 64*5kbp = 320kbp 
 Default: 64.
 * --outfolder, -o [required]  
 Folder where output will be stored.
@@ -143,7 +157,69 @@ Returns:
 * (temporary) Tensorflow TFRecord files containing serialized prediction samples. Do not touch these files while the program is running, they should be open for reading anyway and will be deleted automatically upon completion.
 
 ### Example usage
-t.b.d.
+Assume Hi-C and chromatin feature data is available for cell_line1,
+and the same chromatin feature is also available for cell_line2.
+Then Hi-cGAN can be trained on data from cell_line1 to predict
+cell_line2's (unknown) Hi-C matrix.
+```
+#following folder structure is assumed
+#./
+#./cell_line1/
+#./cell_line1/feature1.bigwig
+#./cell_line1/feature2.bigwig
+#./cell_line1/feature3.bigwig
+#./cell_line1/HiCmatrix.cool
+#./cell_line2/
+#./cell_line2/feature1.bigwig
+#./cell_line2/feature2.bigwig
+#./cell_line2/feature3.bigwig
+#./trained_models/
+#./predictions/
+
+#training Hi-C matrix
+#assuming it has a 25kbp bin size
+tm="./cell_line1/HiCmatrix_25kb.cool"
+#training chromatin features
+tcp="./cell_line1/"
+#training chromosomes
+tchroms="1 5 10"
+#validation matrix, chromatin features and chromosome(s). 
+vm="./cell_line1/HiCmatrix.cool" #here, same as for training
+vcp="./cell_line1/" #here, same as for training
+vchroms="19" #here, should not intersect with training chromosomes
+
+#train Hi-cGAN on data from cell_line1, 100 epochs 
+#this might take hours to days, depending on hardware
+#GPU strongly recommended for windowsizes 128, 256
+#progress bars are provided for runtime estimation
+training.py -tm ${tm} -tcp ${tcp} -tchroms ${tchroms} -vm ${vm} -vcp ${vcp} -vchroms ${vchroms} -o ./trained_models -ep 100
+
+#after training finishes, ./trained_models has a file "generator_00099.h5"
+#among other files
+
+#the trained model with weights etc.
+trm="./trained_models/generator_00099.h5"
+#the chromatin path for prediction
+tcp="./cell_line2/"
+#the chromosomes to be predicted
+tchroms="3 7 21"
+#the binsize of the target matrix
+#here, same as for training
+b="25000"
+#the windowsize of the target matrix
+#must be the same as for training
+ws="64"
+
+
+#now use the trained model from above to predict Hi-C matrix for cell line 2
+predict.py -trm ${trm} -tcp ${tcp} -tchroms ${tchroms} -o ./predictions -b ${b} -ws ${ws}
+
+#the prediction script often completes within a few minutes on recent hardware
+#after that, there's a file named ./predictions/predMatrix.cool
+#which holds the predicted Hi-C matrix (here, with chromosomes 3, 7 and 21)
+#e.g. plot the matrix 
+hicPlotMatrix -m ./predictions/predMatrix.cool --region 3:0-1000000 --log1p -o cell_line2_chr3_0000000-1000000.png
+```
 
 ## Notes
 ### Creating bigwig files for chromatin features from BAM alignment files
