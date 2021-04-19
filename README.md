@@ -5,7 +5,7 @@ designed to predict Hi-C contact matrices from one-dimensional
 chromatin feature data, e. g. from ChIP-seq experiments.
 The network architecture is inspired by [pix2pix from Isola et al.](https://doi.org/10.1109/CVPR.2017.632), amended by custom embedding networks to embed the one-dimensional chromatin feature data into grayscale images. 
 
-Hi-cGAN was created in 2020/2021 as part of a master thesis at Albert-Ludwigs university,  Freiburg, Germany.
+Hi-cGAN was created in 2020/2021 as part of a master thesis at Albert-Ludwigs university,  Freiburg, Germany.   It is provided under the [GPLv3 license](https://github.com/MasterprojectRK/Hi-cGAN/blob/main/LICENSE).
 
 ## Installation
 
