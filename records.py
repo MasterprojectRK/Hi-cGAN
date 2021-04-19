@@ -29,11 +29,7 @@ def _int64_feature(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
 #write tfRecord to disk
-def writeTFRecord(pFilename, pRecordDict):
-    if not isinstance(pFilename, str):
-        return
-    if not isinstance(pRecordDict, dict):
-        return
+def writeTFRecord(pFilename: str, pRecordDict: dict):
     for key in pRecordDict:
         if not isinstance(pRecordDict[key], np.ndarray):
             return
@@ -51,3 +47,9 @@ def writeTFRecord(pFilename, pRecordDict):
                 feature[key] = _bytes_feature( pRecordDict[key][i].flatten().tostring() )
             example = tf.train.Example(features=tf.train.Features(feature=feature))
             writer.write(example.SerializeToString())
+
+def mirror_function(tensor1, tensor2):
+    t1 = tf.reverse(tensor1, axis=[0])
+    t2 = tf.transpose(tensor2, perm=(1,0,2))
+    t2 = tf.image.rot90(t2, 2)
+    return {"factorData": t1}, {"out_matrixData": t2}

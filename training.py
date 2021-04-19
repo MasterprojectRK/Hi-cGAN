@@ -27,12 +27,73 @@ import records
               type=click.Path(exists=True, file_okay=False, readable=True), multiple=True,
               help="Path where chromatin factors for validation reside (bigwig files). Use this option multiple times to specify more than one path. First path belongs to first validation matrix etc.")
 @click.option("--windowsize", "-ws", required=True,
-              type=click.IntRange(min=64), 
-              default=64, show_default=True,
-              help="Windowsize for submatrices. Must be integer >80 and (much) smaller than smallest chrom")
+              type=click.Choice(["64", "128", "256"]), 
+              default="64", show_default=True,
+              help="Windowsize for submatrices. 64, 128 and 256 are supported")
 @click.option("--outfolder", "-o", required=True,
               type=click.Path(exists=True, writable=True, file_okay=False), 
               help="Folder where trained model and diverse outputs will be stored")
+@click.option("--epochs", "-ep", required=True,
+              type=click.IntRange(min=1), 
+              default=2, show_default=True)
+@click.option("--batchsize", "-bs", required=True,
+              type=click.IntRange(min=1, max=256), 
+              default=32, show_default=True, 
+              help="Batch size for training, choose integer in [1, 256]")
+@click.option("--lossWeightPixel", "-lwp", required=False,
+              type=click.FloatRange(min=1e-10), 
+              default=100.0, show_default=True, 
+              help="loss weight for L1/L2 error of generator")
+@click.option("--lossWeightDisc", "-lwd", required=False,
+              type=click.FloatRange(min=1e-10),
+              default=0.5, show_default=True,
+              help="loss weight (multiplicator) for the discriminator loss")
+@click.option("--lossTypePixel", "-ltp", required=False,
+             type=click.Choice(["L1", "L2"]), 
+             default="L1", show_default=True,
+             help="Type of per-pixel loss to use for the generator; choose from L1 (mean abs. error) or L2 (mean squared error)")
+@click.option("--lossWeightTv", "-lwt", required=False,
+             type=click.FloatRange(min=0.0),
+             default=1e-10, show_default=True,
+             help="loss weight for Total-Variation-loss of generator; higher value - more smoothing")
+@click.option("--lossWeightAdv", "-lwa", required=False,
+              type=click.FloatRange(min=1e-10), 
+              default=1.0, show_default=True,
+              help="loss weight for adversarial loss in generator")
+@click.option("--learningRateGen", "-lrg", required=False,
+              type=click.FloatRange(min=1e-10, max=1.0), 
+              default=2e-5, show_default=True,
+              help="learning rate for Adam optimizer of generator")
+@click.option("--learningRateDisc", "-lrd", required=False,
+              type=click.FloatRange(min=1e-10, max=1.0),
+              default=1e-6, show_default=True,
+              help="learning rate for Adam optimizer of discriminator")
+@click.option("--beta1", "-b1", required=False,
+              type=click.FloatRange(min=1e-2, max=1.0),
+              default=0.5, show_default=True,
+              help="beta1 parameter for Adam optimizers (gen. and disc.)")
+@click.option("--flipsamples", "-fs", required=False,
+             type=bool, default=False, show_default=True,
+             help="Flip training matrices and chromatin features (data augmentation)")
+@click.option("--embeddingType", "-emb", required=False,
+             type=click.Choice(["CNN", "DNN", "mixed"]),
+             default="CNN", show_default=True,
+             help="Type of embedding to use for generator and discriminator. CNN, DNN, or mixed (Gen: CNN, Disc: DNN)")
+@click.option("--pretrainedIntroModel", "-ptm", required=False,
+             type=click.Path(exists=True, dir_okay=False, readable=True),
+             help="pretrained model for 1D-2D conversion of inputs")
+@click.option("--figuretype", "-ft", required=False,
+             type=click.Choice(["png", "pdf", "svg"]), 
+             default="png", show_default=True,
+             help="Figure type for all plots")
+@click.option("--recordsize", "-rs", required=False,
+             type=click.IntRange(min=10), 
+             default=2000, show_default=True,
+             help="Approx. size (number of samples) of the tfRecords used in the data pipeline for training. Lower values = less memory consumption, but maybe longer runtime")
+@click.option("--plotFrequency", "-pfreq", required=False,
+             type=click.IntRange(min=1),
+             default=10, show_default=True,
+             help="Update loss over epoch plots after this number of epochs")
 @click.command()
 def training(trainmatrices, 
              trainchroms, 
@@ -41,16 +102,28 @@ def training(trainmatrices,
              valchroms, 
              valchrompaths,
              windowsize,
-             outfolder):
-    
-    paramDict = locals().copy()
+             outfolder,
+             epochs,
+             batchsize,
+             lossweightpixel,
+             lossweightdisc,
+             lossweightadv,
+             losstypepixel,
+             lossweighttv,
+             learningrategen,
+             learningratedisc,
+             beta1,
+             flipsamples,
+             embeddingtype,
+             pretrainedintromodel,
+             figuretype,
+             recordsize,
+             plotfrequency):
 
     #few constants
-    recordsize = 2000
+    windowsize = int(windowsize)
     debugstate = None
-    figuretype = "png"
-    EPOCHS = 10
-    batchsize = 32
+    paramDict = locals().copy()
 
     #remove spaces, commas and "chr" from the train and val chromosome lists
     #ensure each chrom name is used only once, but allow the same chrom for train and validation
@@ -98,7 +171,7 @@ def training(trainmatrices,
 
     #define the load params for the containers
     loadParams = {"scaleFeatures": True,
-                  "clampFeatures": True,
+                  "clampFeatures": False,
                   "scaleTargets": True,
                   "windowsize": windowsize,
                   "flankingsize": windowsize,
@@ -115,6 +188,7 @@ def training(trainmatrices,
         container.loadData(**loadParams)
         if not container0.checkCompatibility(container):
             msg = "Aborting. Incompatible data"
+            raise SystemExit(msg)
         tfRecordFilenames.append(container.writeTFRecord(pOutfolder=outfolder,
                                                         pRecordSize=recordsize))
         if debugstate is not None:
@@ -127,11 +201,13 @@ def training(trainmatrices,
                                          figuretype=figuretype)
             container.saveMatrix(outputpath=outfolder, index=idx)
         nr_samples_list.append(container.getNumberSamples())
+    #data is no longer needed
+    for container in traindataContainerList + valdataContainerList:
         container.unloadData()
     traindataRecords = [item for sublist in tfRecordFilenames[0:len(traindataContainerList)] for item in sublist]
     valdataRecords = [item for sublist in tfRecordFilenames[len(traindataContainerList):] for item in sublist]
 
-    #different binsizes are ok, as long as no sequence is used
+    #different binsizes are ok
     #not clear which binsize to use for prediction when they differ during training.
     #For now, store the max. 
     binsize = max([container.binsize for container in traindataContainerList])
@@ -161,8 +237,11 @@ def training(trainmatrices,
                                         num_parallel_reads=tf.data.experimental.AUTOTUNE,
                                         compression_type="GZIP")
     trainDs = trainDs.map(lambda x: records.parse_function(x, storedFeaturesDict), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    if flipsamples:
+        flippedDs = trainDs.map(lambda a,b: records.mirror_function(a["factorData"], b["out_matrixData"]))
+        trainDs = trainDs.concatenate(flippedDs)
     trainDs = trainDs.shuffle(buffer_size=shuffleBufferSize, reshuffle_each_iteration=True)
-    trainDs = trainDs.batch(batchsize, drop_remainder=False)
+    trainDs = trainDs.batch(batchsize, drop_remainder=True)
     trainDs = trainDs.prefetch(tf.data.experimental.AUTOTUNE)
     #build the input streams for validation
     validationDs = tf.data.TFRecordDataset(valdataRecords, 
@@ -172,9 +251,32 @@ def training(trainmatrices,
     validationDs = validationDs.batch(batchsize)
     validationDs = validationDs.prefetch(tf.data.experimental.AUTOTUNE)
     
-    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder)
+    steps_per_epoch = int( np.floor(nr_trainingSamples / batchsize) )
+    if flipsamples:
+        steps_per_epoch *= 2
+    if pretrainedintromodel is None:
+        pretrainedintromodel = ""
+    hicGanModel = hicGAN.HiCGAN(log_dir=outfolder, 
+                                number_factors=nr_factors,
+                                loss_weight_pixel=lossweightpixel,
+                                loss_weight_adversarial=lossweightadv,
+                                loss_weight_discriminator=lossweightdisc, 
+                                loss_type_pixel=losstypepixel, 
+                                loss_weight_tv=lossweighttv, 
+                                input_size=windowsize,
+                                learning_rate_generator=learningrategen,
+                                learning_rate_discriminator=learningratedisc,
+                                adam_beta_1=beta1,
+                                plot_type=figuretype,
+                                plot_frequency=plotfrequency,
+                                embedding_model_type=embeddingtype,
+                                pretrained_model_path=pretrainedintromodel)
     hicGanModel.plotModels(outputpath=outfolder, figuretype=figuretype)
-    hicGanModel.fit(train_ds=trainDs, epochs=EPOCHS, test_ds=validationDs, steps_per_epoch=int( np.floor(nr_trainingSamples / batchsize) ))
+    hicGanModel.fit(train_ds=trainDs, epochs=epochs, test_ds=validationDs, steps_per_epoch=steps_per_epoch)
+
+    for tfRecordfile in traindataRecords + valdataRecords:
+        if os.path.exists(tfRecordfile):
+            os.remove(tfRecordfile)
 
 if __name__ == "__main__":
     training() #pylint: disable=no-value-for-parameter

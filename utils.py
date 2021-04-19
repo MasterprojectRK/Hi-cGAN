@@ -9,10 +9,7 @@ import matplotlib.colors as colors
 from matplotlib.ticker import MultipleLocator
 from tqdm import tqdm
 from scipy import sparse
-from Bio import SeqIO
-from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn import metrics as metrics
-import pandas as pd
 
 def getBigwigFileList(pDirectory):
     #returns a list of bigwig files in pDirectory
@@ -146,18 +143,27 @@ def plotMatrix(pMatrix, pFilename, pTitle):
     ax1.set_title(str(pTitle))
     fig1.colorbar(cs)
     fig1.savefig(pFilename)
+    plt.close(fig1)
+    del fig1, ax1
 
-def plotLoss(pLossValueLists, pNameList, pFilename):
+def plotLoss(pGeneratorLossValueLists, pDiscLossValueLists, pGeneratorLossNameList, pDiscLossNameList, pFilename, useLogscaleList=[False, False]):
     #plot loss and validation loss over epoch numbers
     fig1, ax1 = plt.subplots(figsize=(6,4.5))
-    nr_epochs = len(pLossValueLists[0])
+    nr_epochs = len(pGeneratorLossValueLists[0])
     x_vals = np.arange(nr_epochs) + 1
-    for lossVals, _ in zip(pLossValueLists, pNameList):
-        ax1.plot(x_vals, lossVals)
+    for generatorLossVals, _ in zip(pGeneratorLossValueLists, pGeneratorLossNameList):
+        ax1.plot(x_vals, generatorLossVals)
     ax1.set_title('model loss')
-    ax1.set_ylabel('loss')
+    ax1.set_ylabel('generator loss')
     ax1.set_xlabel('epoch')
-    ax1.set_yscale('log')
+    if useLogscaleList[0]:
+        ax1.set_yscale('log')
+    ax2 = ax1.twinx()
+    for discLossVals, _ in zip(pDiscLossValueLists, pDiscLossNameList):
+        ax2.plot(x_vals, discLossVals, ":")
+    ax2.set_ylabel("discriminator loss")
+    if useLogscaleList[1]:
+        ax2.set_yscale('log')
     locVal = 0
     if nr_epochs <= 25:
         locVal = 1
@@ -177,8 +183,14 @@ def plotLoss(pLossValueLists, pNameList, pFilename):
         locVal = 1000
     ax1.xaxis.set_major_locator(MultipleLocator(locVal))
     ax1.grid(True, which="both")
-    ax1.legend(pNameList, loc='upper right')
+    if len(pGeneratorLossNameList) > 1:
+        ax1.legend(pGeneratorLossNameList, loc='upper right', title="Generator")
+    if len(pDiscLossNameList) > 1:
+        ax2.legend(pDiscLossNameList, loc="lower right", title="Discriminator")
+    fig1.tight_layout()
     fig1.savefig(pFilename)
+    plt.close(fig1)
+    del fig1, ax1, ax2
 
 def rebuildMatrix(pArrayOfTriangles, pWindowSize, pFlankingSize=None, pMaxDist=None, pStepsize=1):
     #rebuilds the interaction matrix (a trapezoid along its diagonal)
@@ -331,6 +343,8 @@ def plotChromatinFactors_boxplots(pChromFactorArray, pFilename, pBinSize=None, p
     ax1.set_ylabel("Chromatin factor signal value")
     fig1.tight_layout()
     fig1.savefig(pFilename)
+    plt.close(fig1)
+    del fig1, ax1
 
 def plotChromatinFactors_lineplots(pChromFactorArray, pFilename, pBinSize, pStartbin, pAxTitle=None, pFactorNames=None):
     #plot chromatin factors line plots
@@ -371,6 +385,8 @@ def plotChromatinFactors_lineplots(pChromFactorArray, pFilename, pBinSize, pStar
     fig1.text(0.04, 0.5, 'signal value', va='center', rotation='vertical')
     fig1.suptitle("Chromatin factors")
     fig1.savefig(pFilename)
+    plt.close(fig1)
+    del fig1, axs1
 
 def clampArray(pArray):
     #clamp all values in pArray to be within 
@@ -385,42 +401,6 @@ def clampArray(pArray):
         clampedArray[clampedArray < lowerClampingBound] = lowerClampingBound
         clampedArray[clampedArray > upperClampingBound] = upperClampingBound
     return clampedArray
-
-def encodeSequence(pSequenceStr, pClasses=None):
-    #one-hot encoding for DNA sequences
-    if pSequenceStr is None or pSequenceStr == "":
-        msg = "Aborting. DNA sequence is empty"
-        raise SystemExit(msg)
-    mlb = MultiLabelBinarizer(classes=pClasses)
-    encodedSequenceArray = mlb.fit_transform(pSequenceStr).astype("uint8")
-    if encodedSequenceArray.shape[1] != 4:
-        msg = "Warning: DNA sequence contains more than the 4 nucleotide symbols A,C,G,T\n"
-        msg += "Check your input sequence, if this is not intended."
-        print(msg)
-        print("Contained symbols:", ", ".join(mlb.classes_))
-    return encodedSequenceArray
-
-def fillEncodedSequence(pEncodedSequenceArray, pBinSizeInt):
-    #fill one-hot encoded sequence array with zero vectors such that
-    #the length matches the number of bins
-    if pBinSizeInt is None or not isinstance(pBinSizeInt, int):
-        return
-    actualLengthInt = pEncodedSequenceArray.shape[0] #here, length in basepairs
-    targetLengthInt = int(np.ceil(actualLengthInt/pBinSizeInt))*pBinSizeInt #in basepairs
-    returnArray = None
-    if targetLengthInt > actualLengthInt:
-        #append zero vectors to the array to fill the last bin
-        #in case the chromosome length is not divisible by bin size (as is normal)
-        toAppendArray = np.zeros((targetLengthInt-actualLengthInt,pEncodedSequenceArray.shape[1]),dtype="uint8")
-        returnArray = np.append(pEncodedSequenceArray,toAppendArray,axis=0)
-    else:
-        msg = "Warning: could not append zeros to end of array.\n"
-        msg += "Target length {:d}, actual length {:d}\n"
-        msg += "Array left unchanged."
-        msg = msg.format(targetLengthInt, actualLengthInt)
-        print(msg)
-        returnArray = pEncodedSequenceArray
-    return returnArray
 
 def computePearsonCorrelation(pCoolerFile1, pCoolerFile2, 
                               pWindowsize_bp,
@@ -637,6 +617,8 @@ def plotPearsonCorrelationDf(pResultsDfList, pLegendList, pOutfile, pMethod="pea
             msg += "Renamed outfile to {:s}".format(outfile)
             print(msg)
         fig1.savefig(outfile)
+    plt.close(fig1)
+    del fig1, ax1
 
 def maskFunc(pArray, pWindowSize=0):
     #mask a trapezoid along the (main) diagonal of a 2D array
